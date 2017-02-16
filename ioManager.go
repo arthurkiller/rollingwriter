@@ -122,8 +122,10 @@ func (p *patternManager) Enable() (string, bool) {
 		return "", false
 	}
 
+	dur := -p.patternUnmarshal()
+
 	p.caculateRollingPoint(now)
-	return p.prefix + now.Format("200601021504") + p.suffix, true
+	return p.prefix + now.Add(dur).Format("200601021504") + p.suffix + ".log", true
 }
 
 func (p *patternManager) Path() string {

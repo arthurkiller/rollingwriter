@@ -14,6 +14,7 @@ import (
 
 type IOWriter interface {
 	io.Writer
+	Close() error
 }
 
 var (
@@ -24,7 +25,7 @@ var (
 	// the reopen operation check the condition
 	Precision = 1
 	// WaitForClose wait for SECONDS then close the last file writer
-	WartForClose = 10
+	WartForClose = 1
 
 	// ErrInternal defined the internal error
 	ErrInternal = errors.New("error internal")
@@ -45,7 +46,7 @@ func NewIOWriter(m ioManager) (IOWriter, error) {
 	}
 
 	path, prefix, suffix := m.NameParts()
-	name := path + prefix + time.Now().Format("200601021504") + suffix + ".log"
+	name := path + prefix + suffix + ".log"
 	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
@@ -55,8 +56,10 @@ func NewIOWriter(m ioManager) (IOWriter, error) {
 
 	go writer.conditionWrite()
 
+	// wait for conditionwrite start
 	<-writer.started
 	<-writer.started
+
 	return writer, nil
 }
 
@@ -64,6 +67,7 @@ type fileWriter struct {
 	file   *os.File
 	event  chan string
 	buffer chan []byte
+	close  chan byte
 
 	started   chan int
 	precision <-chan time.Time
@@ -72,10 +76,19 @@ type fileWriter struct {
 	manager   ioManager
 }
 
-func (w *fileWriter) Write(p []byte) (int, error) {
-	n := len(p)
+func (w *fileWriter) Write(s []byte) (int, error) {
+	n := len(s)
+	p := make([]byte, n)
+	copy(p, s)
 	w.buffer <- p
 	return n, nil
+}
+
+func (w *fileWriter) Close() error {
+	w.file.Close()
+	close(w.close)
+
+	return nil
 }
 
 func (w *fileWriter) conditionWrite() {
@@ -101,47 +114,48 @@ func (w *fileWriter) conditionWrite() {
 			// if ignore error then do nothing
 			if err != nil && !w.manager.IgnoreOK() {
 				// FIXME is this a good way?
-				log.Println(err)
+				i, _ := w.file.Stat()
+				log.Println("err in condition write", err, i)
 				w.file = os.Stderr
 			}
 			w.size += int64(n)
+		case <-w.close:
+			break
 		}
 	}
 }
 
-func (w *fileWriter) reopen(path string) {
+func (w *fileWriter) reopen(lastname string) {
 	oldFile := w.file
-
-	file, err := os.OpenFile(path+".log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	oldFileName := oldFile.Name()
+	i, _ := oldFile.Stat()
+	oldSize := i.Size()
+	err := os.Rename(oldFileName, "./"+lastname)
 	if err != nil {
-		if err == os.ErrNotExist {
-			log.Println(err)
-			w.file = os.Stderr
-		}
+		log.Println("error in rename file", err)
+		return
+	}
+
+	// open & swap the file
+	file, err := os.OpenFile(oldFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Println("error in reopen file", err)
+		return
 	}
 	w.file = file
 
-	// Do the additional jobs like compresing the log file
+	// Do additional jobs like compresing the log file
 	go func() {
 		<-time.Tick(time.Second * time.Duration(WartForClose))
-		oldFile.Seek(0, 0)
-		info, _ := oldFile.Stat()
 		if w.manager.Compress() {
 			// Do compress the log file
 			// name the compressed file
 			// delete the old file
-			var source string
-			_, err := oldFile.WriteString(source)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
-			cmpname := strings.TrimSuffix(info.Name(), ".log") + ".tar.gz"
-			cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, info.Mode())
+			cmpname := strings.TrimSuffix(lastname, ".log") + ".tar.gz"
+			cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 			defer cmpfile.Close()
 			if err != nil {
-				log.Println(err)
+				log.Println("error in reopen additional goroution", err)
 				return
 			}
 			gw := gzip.NewWriter(cmpfile)
@@ -150,14 +164,15 @@ func (w *fileWriter) reopen(path string) {
 			defer tw.Close()
 
 			tw.WriteHeader(&tar.Header{
-				Name: info.Name(),
-				Mode: int64(info.Mode()),
-				Size: info.Size(),
+				Name: oldFileName,
+				Mode: 0644,
+				Size: oldSize,
 			})
 
+			oldFile.Seek(0, 0)
 			io.Copy(tw, oldFile)
+			os.Remove(lastname)
 		}
 		oldFile.Close()
-		os.Remove(info.Name())
 	}()
 }
