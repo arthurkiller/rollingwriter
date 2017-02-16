@@ -9,7 +9,8 @@ import (
 
 func newioManager() *patternManager {
 	return &patternManager{
-		pattern: "1-2-3",
+		pattern:  "1-2-3",
+		compress: false,
 	}
 }
 
@@ -40,12 +41,12 @@ func TestEnable(t *testing.T) {
 	n.suffix = "@end"
 
 	s, ok := n.Enable()
+	d := time.Duration(time.Hour*26 + time.Minute*3)
 
 	assert.Equal(t, true, ok)
 
-	assert.Equal(t, "@head"+time.Now().Format("200601021504")+"@end", s)
+	assert.Equal(t, "@head"+time.Now().Add(-d).Format("200601021504")+"@end.log", s)
 
-	d := time.Duration(time.Hour*26 + time.Minute*3)
 	destrp := time.Now().Add(d)
 	assert.Equal(t, destrp.Format("200601021504"), n.rollingPoint.Format("200601021504"))
 }
