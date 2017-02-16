@@ -2,6 +2,7 @@ package bunnystub
 
 import (
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ type ioManager interface {
 	Path() string
 	IgnoreOK() bool
 	Compress() bool
+	LockFree() bool
+	FileMode() os.FileMode
 	Enable() (string, bool)
 	NameParts() (string, string, string)
 }
@@ -19,8 +22,12 @@ func NewioManager(ops ...Option) ioManager {
 	m := &patternManager{
 		filePath: "./",
 		prefix:   "",
-		suffix:   "",
+		suffix:   ".log",
 		pattern:  "1-0-0",
+		ignoreOK: false,
+		compress: false,
+		lockFree: false,
+		fileMode: 0644,
 	}
 
 	for _, o := range ops {
@@ -45,6 +52,11 @@ func WithPrefix(prefix string) Option {
 		p.prefix = prefix
 	}
 }
+func WithFileMode(mode uint32) Option {
+	return func(p *patternManager) {
+		p.fileMode = os.FileMode(mode)
+	}
+}
 func WithSuffix(suffix string) Option {
 	return func(p *patternManager) {
 		p.suffix = suffix
@@ -53,6 +65,11 @@ func WithSuffix(suffix string) Option {
 func WithIgnoreOK() Option {
 	return func(p *patternManager) {
 		p.ignoreOK = true
+	}
+}
+func WithLockFree() Option {
+	return func(p *patternManager) {
+		p.lockFree = true
 	}
 }
 func WithCompress() Option {
@@ -73,9 +90,11 @@ type patternManager struct {
 	// 7-0-0
 	// 6-23-60 means the event will fire every 7 days
 	pattern      string
+	fileMode     os.FileMode
 	rollingPoint time.Time
 	ignoreOK     bool
 	compress     bool
+	lockFree     bool
 }
 
 func (p *patternManager) patternUnmarshal() time.Duration {
@@ -125,12 +144,14 @@ func (p *patternManager) Enable() (string, bool) {
 	dur := -p.patternUnmarshal()
 
 	p.caculateRollingPoint(now)
-	return p.prefix + now.Add(dur).Format("200601021504") + p.suffix + ".log", true
+	return p.prefix + now.Add(dur).Format("200601021504") + p.suffix, true
 }
 
 func (p *patternManager) Path() string {
 	return p.filePath + p.prefix + p.rollingPoint.Format("200601021504") + p.suffix + ".log"
 }
 func (p *patternManager) IgnoreOK() bool                      { return p.ignoreOK }
+func (p *patternManager) LockFree() bool                      { return p.lockFree }
 func (p *patternManager) Compress() bool                      { return p.compress }
+func (p *patternManager) FileMode() os.FileMode               { return p.fileMode }
 func (p *patternManager) NameParts() (string, string, string) { return p.filePath, p.prefix, p.suffix }

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -25,7 +26,7 @@ var (
 	// the reopen operation check the condition
 	Precision = 1
 	// WaitForClose wait for SECONDS then close the last file writer
-	WartForClose = 1
+	WartForClose = 3
 
 	// ErrInternal defined the internal error
 	ErrInternal = errors.New("error internal")
@@ -38,23 +39,49 @@ func NewIOWriter(m ioManager) (IOWriter, error) {
 	if m == nil {
 		return nil, ErrInvalidArgument
 	}
+
+	if m.LockFree() {
+		var writer = &lockFreeWriter{
+			event:     make(chan string, 2),
+			buffer:    make(chan []byte, BufferSize),
+			precision: time.Tick(time.Duration(Precision) * time.Second),
+			manager:   m,
+		}
+
+		path, prefix, suffix := m.NameParts()
+		name := path + prefix + suffix
+		file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, m.FileMode())
+		if err != nil {
+			return nil, err
+		}
+		writer.file = file
+		writer.started = make(chan int, 2)
+
+		go writer.conditionWrite()
+
+		// wait for conditionwrite start
+		<-writer.started
+		<-writer.started
+
+		return writer, nil
+	}
+
 	var writer = &fileWriter{
 		event:     make(chan string, 2),
-		buffer:    make(chan []byte, BufferSize),
 		precision: time.Tick(time.Duration(Precision) * time.Second),
 		manager:   m,
 	}
 
 	path, prefix, suffix := m.NameParts()
-	name := path + prefix + suffix + ".log"
-	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	name := path + prefix + suffix
+	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, m.FileMode())
 	if err != nil {
 		return nil, err
 	}
 	writer.file = file
 	writer.started = make(chan int, 2)
 
-	go writer.conditionWrite()
+	go writer.conditionManager()
 
 	// wait for conditionwrite start
 	<-writer.started
@@ -64,6 +91,101 @@ func NewIOWriter(m ioManager) (IOWriter, error) {
 }
 
 type fileWriter struct {
+	file      *os.File
+	l         sync.RWMutex
+	manager   ioManager
+	started   chan int
+	precision <-chan time.Time
+	event     chan string
+	close     chan byte
+}
+
+func (w *fileWriter) Write(s []byte) (int, error) {
+	w.l.RLock()
+	defer w.l.RUnlock()
+	return w.file.Write(s)
+}
+
+func (w *fileWriter) Close() error {
+	close(w.close)
+
+	return w.file.Close()
+}
+
+func (w *fileWriter) conditionManager() {
+	defer syscall.Sync()
+	go func() {
+		w.started <- 1
+		for {
+			if s, ok := w.manager.Enable(); ok {
+				w.event <- s
+			}
+			<-w.precision
+		}
+	}()
+	w.started <- 1
+
+	for {
+		select {
+		case lastname := <-w.event:
+			oldFile := w.file
+			oldFileName := oldFile.Name()
+			i, _ := oldFile.Stat()
+			oldSize := i.Size()
+
+			err := os.Rename(oldFileName, "./"+lastname)
+			if err != nil {
+				log.Println("error in rename file", err)
+				return
+			}
+
+			// open & swap the file
+			file, err := os.OpenFile(oldFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
+			if err != nil {
+				log.Println("error in reopen file", err)
+				return
+			}
+			w.file = file
+
+			// Do additional jobs like compresing the log file
+			go func() {
+				w.l.Lock()
+				defer w.l.Unlock()
+				if w.manager.Compress() {
+					// Do compress the log file
+					// name the compressed file
+					// delete the old file
+					cmpname := strings.TrimSuffix(lastname, ".log") + ".tar.gz"
+					cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
+					defer cmpfile.Close()
+					if err != nil {
+						log.Println("error in reopen additional goroution", err)
+						return
+					}
+					gw := gzip.NewWriter(cmpfile)
+					defer gw.Close()
+					tw := tar.NewWriter(gw)
+					defer tw.Close()
+
+					tw.WriteHeader(&tar.Header{
+						Name: oldFileName,
+						Mode: int64(w.manager.FileMode()),
+						Size: oldSize,
+					})
+
+					oldFile.Seek(0, 0)
+					io.Copy(tw, oldFile)
+					os.Remove(lastname)
+				}
+				oldFile.Close()
+			}()
+		case <-w.close:
+			break
+		}
+	}
+}
+
+type lockFreeWriter struct {
 	file   *os.File
 	event  chan string
 	buffer chan []byte
@@ -76,7 +198,7 @@ type fileWriter struct {
 	manager   ioManager
 }
 
-func (w *fileWriter) Write(s []byte) (int, error) {
+func (w *lockFreeWriter) Write(s []byte) (int, error) {
 	n := len(s)
 	p := make([]byte, n)
 	copy(p, s)
@@ -84,14 +206,13 @@ func (w *fileWriter) Write(s []byte) (int, error) {
 	return n, nil
 }
 
-func (w *fileWriter) Close() error {
-	w.file.Close()
+func (w *lockFreeWriter) Close() error {
 	close(w.close)
 
-	return nil
+	return w.file.Close()
 }
 
-func (w *fileWriter) conditionWrite() {
+func (w *lockFreeWriter) conditionWrite() {
 	defer syscall.Sync()
 
 	go func() {
@@ -125,7 +246,7 @@ func (w *fileWriter) conditionWrite() {
 	}
 }
 
-func (w *fileWriter) reopen(lastname string) {
+func (w *lockFreeWriter) reopen(lastname string) {
 	oldFile := w.file
 	oldFileName := oldFile.Name()
 	i, _ := oldFile.Stat()
@@ -137,7 +258,7 @@ func (w *fileWriter) reopen(lastname string) {
 	}
 
 	// open & swap the file
-	file, err := os.OpenFile(oldFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	file, err := os.OpenFile(oldFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 	if err != nil {
 		log.Println("error in reopen file", err)
 		return
@@ -152,7 +273,7 @@ func (w *fileWriter) reopen(lastname string) {
 			// name the compressed file
 			// delete the old file
 			cmpname := strings.TrimSuffix(lastname, ".log") + ".tar.gz"
-			cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+			cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 			defer cmpfile.Close()
 			if err != nil {
 				log.Println("error in reopen additional goroution", err)
@@ -165,7 +286,7 @@ func (w *fileWriter) reopen(lastname string) {
 
 			tw.WriteHeader(&tar.Header{
 				Name: oldFileName,
-				Mode: 0644,
+				Mode: int64(w.manager.FileMode()),
 				Size: oldSize,
 			})
 
