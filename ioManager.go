@@ -18,7 +18,7 @@ type ioManager interface {
 	NameParts() (string, string, string)
 }
 
-func NewioManager(ops ...Option) ioManager {
+func newIOManager(ops ...Option) ioManager {
 	m := &patternManager{
 		filePath: "./",
 		prefix:   "",
@@ -46,7 +46,13 @@ func WithPattern(pattern string) Option {
 		p.pattern = pattern
 	}
 }
-
+func WithPath(path string) Option {
+	return func(p *patternManager) {
+		path = strings.TrimSuffix(path, "/")
+		path = path + "/"
+		p.filePath = path
+	}
+}
 func WithPrefix(prefix string) Option {
 	return func(p *patternManager) {
 		p.prefix = prefix
@@ -141,14 +147,14 @@ func (p *patternManager) Enable() (string, bool) {
 		return "", false
 	}
 
-	dur := -p.patternUnmarshal()
-
 	p.caculateRollingPoint(now)
-	return p.prefix + now.Add(dur).Format("200601021504") + p.suffix, true
+
+	dur := -p.patternUnmarshal()
+	return p.filePath + p.prefix + now.Add(dur).Format("200601021504") + p.suffix, true
 }
 
 func (p *patternManager) Path() string {
-	return p.filePath + p.prefix + p.rollingPoint.Format("200601021504") + p.suffix + ".log"
+	return p.filePath + p.prefix + p.suffix + ".log"
 }
 func (p *patternManager) IgnoreOK() bool                      { return p.ignoreOK }
 func (p *patternManager) LockFree() bool                      { return p.lockFree }

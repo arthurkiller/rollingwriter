@@ -1,7 +1,6 @@
 package bunnystub
 
 import (
-	"archive/tar"
 	"compress/gzip"
 	"errors"
 	"io"
@@ -26,7 +25,7 @@ var (
 	// the reopen operation check the condition
 	Precision = 1
 	// WaitForClose wait for SECONDS then close the last file writer
-	WartForClose = 3
+	WartForClose = 5
 
 	// ErrInternal defined the internal error
 	ErrInternal = errors.New("error internal")
@@ -35,10 +34,8 @@ var (
 )
 
 // NewIOWriter generate a iofilter writer with given ioManager
-func NewIOWriter(m ioManager) (IOWriter, error) {
-	if m == nil {
-		return nil, ErrInvalidArgument
-	}
+func NewIOWriter(ops ...Option) (IOWriter, error) {
+	m := newIOManager(ops...)
 
 	if m.LockFree() {
 		var writer = &lockFreeWriter{
@@ -66,11 +63,7 @@ func NewIOWriter(m ioManager) (IOWriter, error) {
 		return writer, nil
 	}
 
-	var writer = &fileWriter{
-		event:     make(chan string, 2),
-		precision: time.Tick(time.Duration(Precision) * time.Second),
-		manager:   m,
-	}
+	var writer = &fileWriter{event: make(chan string, 2), precision: time.Tick(time.Duration(Precision) * time.Second), manager: m}
 
 	path, prefix, suffix := m.NameParts()
 	name := path + prefix + suffix
@@ -113,7 +106,6 @@ func (w *fileWriter) Close() error {
 }
 
 func (w *fileWriter) conditionManager() {
-	defer syscall.Sync()
 	go func() {
 		w.started <- 1
 		for {
@@ -130,10 +122,8 @@ func (w *fileWriter) conditionManager() {
 		case lastname := <-w.event:
 			oldFile := w.file
 			oldFileName := oldFile.Name()
-			i, _ := oldFile.Stat()
-			oldSize := i.Size()
 
-			err := os.Rename(oldFileName, "./"+lastname)
+			err := os.Rename(oldFileName, lastname)
 			if err != nil {
 				log.Println("error in rename file", err)
 				return
@@ -145,6 +135,7 @@ func (w *fileWriter) conditionManager() {
 				log.Println("error in reopen file", err)
 				return
 			}
+			w.file.Sync()
 			w.file = file
 
 			// Do additional jobs like compresing the log file
@@ -155,7 +146,7 @@ func (w *fileWriter) conditionManager() {
 					// Do compress the log file
 					// name the compressed file
 					// delete the old file
-					cmpname := strings.TrimSuffix(lastname, ".log") + ".tar.gz"
+					cmpname := strings.TrimSuffix(lastname, ".log") + ".gz"
 					cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 					defer cmpfile.Close()
 					if err != nil {
@@ -164,18 +155,10 @@ func (w *fileWriter) conditionManager() {
 					}
 					gw := gzip.NewWriter(cmpfile)
 					defer gw.Close()
-					tw := tar.NewWriter(gw)
-					defer tw.Close()
-
-					tw.WriteHeader(&tar.Header{
-						Name: oldFileName,
-						Mode: int64(w.manager.FileMode()),
-						Size: oldSize,
-					})
 
 					oldFile.Seek(0, 0)
-					io.Copy(tw, oldFile)
-					os.Remove(lastname)
+					io.Copy(gw, oldFile)
+					os.Remove(lastname) //remove *.log
 				}
 				oldFile.Close()
 			}()
@@ -249,9 +232,7 @@ func (w *lockFreeWriter) conditionWrite() {
 func (w *lockFreeWriter) reopen(lastname string) {
 	oldFile := w.file
 	oldFileName := oldFile.Name()
-	i, _ := oldFile.Stat()
-	oldSize := i.Size()
-	err := os.Rename(oldFileName, "./"+lastname)
+	err := os.Rename(oldFileName, lastname)
 	if err != nil {
 		log.Println("error in rename file", err)
 		return
@@ -263,6 +244,7 @@ func (w *lockFreeWriter) reopen(lastname string) {
 		log.Println("error in reopen file", err)
 		return
 	}
+	w.file.Sync()
 	w.file = file
 
 	// Do additional jobs like compresing the log file
@@ -272,7 +254,7 @@ func (w *lockFreeWriter) reopen(lastname string) {
 			// Do compress the log file
 			// name the compressed file
 			// delete the old file
-			cmpname := strings.TrimSuffix(lastname, ".log") + ".tar.gz"
+			cmpname := strings.TrimSuffix(lastname, ".log") + ".gz"
 			cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 			defer cmpfile.Close()
 			if err != nil {
@@ -281,17 +263,9 @@ func (w *lockFreeWriter) reopen(lastname string) {
 			}
 			gw := gzip.NewWriter(cmpfile)
 			defer gw.Close()
-			tw := tar.NewWriter(gw)
-			defer tw.Close()
-
-			tw.WriteHeader(&tar.Header{
-				Name: oldFileName,
-				Mode: int64(w.manager.FileMode()),
-				Size: oldSize,
-			})
 
 			oldFile.Seek(0, 0)
-			io.Copy(tw, oldFile)
+			io.Copy(gw, oldFile)
 			os.Remove(lastname)
 		}
 		oldFile.Close()
