@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,82 +21,184 @@ var (
 	// BufferSize defined the buffer size
 	// about 2MB
 	BufferSize = 0x6ffffff
-	// Precision defined the precision about how many SECONDS will be waitted before
-	// the reopen operation check the condition
-	Precision = 1
-	// WaitForClose wait for SECONDS then close the last file writer
-	WartForClose = 5
 
 	// ErrInternal defined the internal error
 	ErrInternal = errors.New("error internal")
 	// ErrInvalidArgument defined the invalid argument
 	ErrInvalidArgument = errors.New("error argument invalid")
+	// ErrMakingLogDirFailed means this path can not be created
+	ErrMakingLogDirFailed = errors.New("error in make dir with given path")
 )
 
+type limittedWriter struct {
+	wr        io.Writer
+	condition func()
+}
+
+func warpWriter(w io.Writer, condition func()) io.Writer { return limittedWriter{w, condition} }
+
+func (w limittedWriter) Write(s []byte) (int, error) {
+	w.condition()
+	return w.wr.Write(s)
+}
+
 // NewIOWriter generate a iofilter writer with given ioManager
-func NewIOWriter(ops ...Option) (IOWriter, error) {
-	m := newIOManager(ops...)
+func NewIOWriter(path string, kind RotatePolicy, ops ...Option) (IOWriter, error) {
+	if path == "" {
+		return nil, ErrInvalidArgument
+	}
+	ops = append(ops, WithPath(path))
+
+	var m Manager
+	switch kind {
+	case TimeRotate:
+		m = NewTimeRotateManager(ops...)
+	case VolumeRotate:
+		m = NewVolumeRotateManager(ops...)
+	case WithoutRotate:
+		fallthrough
+	default:
+		ss := strings.Split(path, "/")
+		dirpath := strings.Join(ss[:len(ss)-1], "/")
+		err := os.MkdirAll(dirpath, 0755)
+		if err != nil {
+			return nil, err
+		}
+		file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, m.FileMode())
+		if err != nil {
+			return nil, err
+		}
+		return file, nil
+	}
+
+	if m.NameParts()[1] == "" {
+		return nil, ErrInvalidArgument
+	}
 
 	if m.LockFree() {
 		var writer = &lockFreeWriter{
-			event:     make(chan string, 2),
 			buffer:    make(chan []byte, BufferSize),
 			precision: time.Tick(time.Duration(Precision) * time.Second),
 			manager:   m,
 		}
 
-		path, prefix, suffix := m.NameParts()
+		parts := m.NameParts()
+		path, prefix, suffix := parts[0], parts[1], parts[2]
+		err := os.MkdirAll(path, 0755)
+		if err != nil {
+			return nil, err
+		}
+
 		name := path + prefix + suffix
 		file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, m.FileMode())
 		if err != nil {
 			return nil, err
 		}
 		writer.file = file
-		writer.started = make(chan int, 2)
+
+		writer.startWg.Add(1)
 
 		go writer.conditionWrite()
 
-		// wait for conditionwrite start
-		<-writer.started
-		<-writer.started
+		writer.startWg.Wait()
 
 		return writer, nil
 	}
 
-	var writer = &fileWriter{event: make(chan string, 2), precision: time.Tick(time.Duration(Precision) * time.Second), manager: m}
+	var writer = &fileWriter{precision: time.Tick(time.Duration(Precision) * time.Second), manager: m}
 
-	path, prefix, suffix := m.NameParts()
+	parts := m.NameParts()
+	path, prefix, suffix := parts[0], parts[1], parts[2]
+
+	err := os.MkdirAll(path, 0755)
+	if err != nil {
+		return nil, err
+	}
+
 	name := path + prefix + suffix
 	file, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, m.FileMode())
 	if err != nil {
 		return nil, err
 	}
+
+	// XXX
+	if m.Concurency() > 0 {
+		writer.concurrency = int64(m.Concurency())
+		if m.Spining() {
+			writer.condition = func() {
+				writer.spaningInvoke()
+			}
+		} else {
+			var c bool
+			writer.condition = func() {
+				c = writer.invoke()
+				if !c {
+					// TODO do somting here
+					time.Sleep(time.Microsecond)
+				}
+			}
+		}
+		//warpWriter(writer.file, condition)
+	}
+
 	writer.file = file
-	writer.started = make(chan int, 2)
+	writer.startWg.Add(1)
 
 	go writer.conditionManager()
 
 	// wait for conditionwrite start
-	<-writer.started
-	<-writer.started
+	writer.startWg.Wait()
 
 	return writer, nil
 }
 
 type fileWriter struct {
-	file      *os.File
-	l         sync.RWMutex
-	manager   ioManager
-	started   chan int
-	precision <-chan time.Time
-	event     chan string
-	close     chan byte
+	l                  sync.RWMutex
+	file               *os.File
+	manager            Manager
+	startWg            sync.WaitGroup
+	precision          <-chan time.Time
+	close              chan byte
+	condition          func()
+	concurrency        int64
+	concurrencyCounter int64
+}
+
+// invoke ask for the write permission, if not permitated, invoke will return
+func (w *fileWriter) invoke() bool {
+	if atomic.LoadInt64(&w.concurrencyCounter) < w.concurrency {
+		atomic.AddInt64(&w.concurrencyCounter, 1)
+		return true
+	} else {
+		return false
+	}
+}
+
+// spining invoke ask for the permission with a spinning-like behavior
+func (w *fileWriter) spaningInvoke() {
+	for {
+		if atomic.LoadInt64(&w.concurrencyCounter) < w.concurrency {
+			atomic.AddInt64(&w.concurrencyCounter, 1)
+			return
+		}
+	}
+}
+
+// handout give back the resource
+func (w *fileWriter) handout() {
+	atomic.AddInt64(&w.concurrencyCounter, -1)
 }
 
 func (w *fileWriter) Write(s []byte) (int, error) {
 	w.l.RLock()
 	defer w.l.RUnlock()
-	return w.file.Write(s)
+	if w.concurrency > 0 {
+		w.condition()
+	}
+	n, err := w.file.Write(s)
+	w.handout()
+	w.manager.WriteN(n)
+	return n, err
 }
 
 func (w *fileWriter) Close() error {
@@ -106,47 +208,47 @@ func (w *fileWriter) Close() error {
 }
 
 func (w *fileWriter) conditionManager() {
-	go func() {
-		w.started <- 1
-		for {
-			if s, ok := w.manager.Enable(); ok {
-				w.event <- s
-			}
-			<-w.precision
-		}
-	}()
-	w.started <- 1
+	chk := w.manager.Enable()
+	w.startWg.Done()
 
 	for {
 		select {
-		case lastname := <-w.event:
+		case lastname := <-chk:
 			oldFile := w.file
 			oldFileName := oldFile.Name()
+			parts := w.manager.NameParts()
+			path, suf := parts[0], parts[2]
 
 			err := os.Rename(oldFileName, lastname)
 			if err != nil {
 				log.Println("error in rename file", err)
-				return
+			}
+
+			//mkdir for the path
+			err = os.MkdirAll(path, 0755)
+			if err != nil {
+				oldFileName = "./" + suf
+				log.Println("error in mkdir: file cannot be created in this path", path, ", log has moved into './' dir", oldFileName)
 			}
 
 			// open & swap the file
 			file, err := os.OpenFile(oldFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 			if err != nil {
 				log.Println("error in reopen file", err)
-				return
+				continue
 			}
-			w.file.Sync()
+			w.l.Lock()
 			w.file = file
+			w.l.Unlock()
 
 			// Do additional jobs like compresing the log file
 			go func() {
-				w.l.Lock()
-				defer w.l.Unlock()
+				defer oldFile.Close()
 				if w.manager.Compress() {
 					// Do compress the log file
 					// name the compressed file
 					// delete the old file
-					cmpname := strings.TrimSuffix(lastname, ".log") + ".gz"
+					cmpname := lastname + ".gz"
 					cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 					defer cmpfile.Close()
 					if err != nil {
@@ -157,10 +259,14 @@ func (w *fileWriter) conditionManager() {
 					defer gw.Close()
 
 					oldFile.Seek(0, 0)
-					io.Copy(gw, oldFile)
+					_, err = io.Copy(gw, oldFile)
+					if err != nil {
+						cmpfile.Close()
+						os.Remove(cmpname)
+						return
+					}
 					os.Remove(lastname) //remove *.log
 				}
-				oldFile.Close()
 			}()
 		case <-w.close:
 			break
@@ -170,22 +276,24 @@ func (w *fileWriter) conditionManager() {
 
 type lockFreeWriter struct {
 	file   *os.File
-	event  chan string
 	buffer chan []byte
 	close  chan byte
 
-	started   chan int
+	startWg   sync.WaitGroup
 	precision <-chan time.Time
-	size      int64
 	version   int64
-	manager   ioManager
+	manager   Manager
+	wg        sync.WaitGroup
 }
 
 func (w *lockFreeWriter) Write(s []byte) (int, error) {
+	// TODO add a pool here
+	// Reduce function call
+	w.wg.Add(1)
+	defer w.wg.Done()
 	n := len(s)
-	p := make([]byte, n)
-	copy(p, s)
-	w.buffer <- p
+	w.manager.WriteN(n)
+	w.buffer <- s
 	return n, nil
 }
 
@@ -196,33 +304,40 @@ func (w *lockFreeWriter) Close() error {
 }
 
 func (w *lockFreeWriter) conditionWrite() {
-	defer syscall.Sync()
-
-	go func() {
-		w.started <- 1
-		for {
-			if s, ok := w.manager.Enable(); ok {
-				w.event <- s
-			}
-			<-w.precision
-		}
-	}()
-	w.started <- 1
+	chk := w.manager.Enable()
+	w.startWg.Done()
 
 	for {
 		select {
-		case path := <-w.event:
+		case path := <-chk:
 			w.reopen(path)
 		case v := <-w.buffer:
-			n, err := w.file.Write(v)
+			_, err := w.file.Write(v)
 			// if ignore error then do nothing
 			if err != nil && !w.manager.IgnoreOK() {
 				// FIXME is this a good way?
-				i, _ := w.file.Stat()
-				log.Println("err in condition write", err, i)
-				w.file = os.Stderr
+				i, errn := w.file.Stat()
+				if errn == nil {
+					log.Println("err in condition write", err, i)
+				} else {
+					log.Println("err in condition write", err)
+				}
+				parts := w.manager.NameParts()
+				path, prefix, suffix := parts[0], parts[1], parts[2]
+				retryOpenFileName := path + prefix + suffix
+				retryOpenfile, err := os.OpenFile(retryOpenFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
+				if err != nil {
+					retryOpenFileName := "./" + prefix + suffix
+					retryOpenfile, err := os.OpenFile(retryOpenFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
+					if err != nil {
+						w.file = os.Stderr
+						continue
+					}
+					w.file = retryOpenfile
+					continue
+				}
+				w.file = retryOpenfile
 			}
-			w.size += int64(n)
 		case <-w.close:
 			break
 		}
@@ -235,7 +350,15 @@ func (w *lockFreeWriter) reopen(lastname string) {
 	err := os.Rename(oldFileName, lastname)
 	if err != nil {
 		log.Println("error in rename file", err)
-		return
+	}
+
+	//mkdir for the path
+	parts := w.manager.NameParts()
+	path, suf := parts[0], parts[2]
+	err = os.MkdirAll(path, 0755)
+	if err != nil {
+		oldFileName = "./" + suf
+		log.Println("error in mkdir: file cannot be created in this path", path, ", log has moved into './' dir", oldFileName, err)
 	}
 
 	// open & swap the file
@@ -244,30 +367,35 @@ func (w *lockFreeWriter) reopen(lastname string) {
 		log.Println("error in reopen file", err)
 		return
 	}
-	w.file.Sync()
 	w.file = file
 
 	// Do additional jobs like compresing the log file
 	go func() {
-		<-time.Tick(time.Second * time.Duration(WartForClose))
+		w.wg.Wait()
 		if w.manager.Compress() {
-			// Do compress the log file
-			// name the compressed file
-			// delete the old file
-			cmpname := strings.TrimSuffix(lastname, ".log") + ".gz"
+			// 1.Do compress the log file
+			// 2.name the compressed file
+			// 3.delete the old file
+			cmpname := lastname + ".gz"
 			cmpfile, err := os.OpenFile(cmpname, os.O_RDWR|os.O_CREATE|os.O_APPEND, w.manager.FileMode())
 			defer cmpfile.Close()
 			if err != nil {
-				log.Println("error in reopen additional goroution", err)
+				log.Println("error in reopen doing compress", err)
 				return
 			}
 			gw := gzip.NewWriter(cmpfile)
 			defer gw.Close()
 
 			oldFile.Seek(0, 0)
-			io.Copy(gw, oldFile)
-			os.Remove(lastname)
+			_, err = io.Copy(gw, oldFile)
+			if err != nil {
+				log.Println("error in compress log file", err)
+				cmpfile.Close()
+				os.Remove(cmpname)
+				return
+			}
+			defer os.Remove(lastname)
 		}
-		oldFile.Close()
+		defer oldFile.Close()
 	}()
 }

@@ -1,163 +1,245 @@
 package bunnystub
 
 import (
-	"log"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/robfig/cron"
 )
 
-type ioManager interface {
-	Path() string
-	IgnoreOK() bool
-	Compress() bool
+type RotatePolicy int
+
+const (
+	WithoutRotate = iota
+	TimeRotate
+	VolumeRotate
+)
+
+var (
+	// Precision defined the precision about how many SECONDS will be waitted before
+	// the reopen operation check the condition
+	Precision = 1
+)
+
+type Manager interface {
+	Enable() chan string
+	WriteN(int)
+	ResetFileSize()
 	LockFree() bool
+	NameParts() []string
 	FileMode() os.FileMode
-	Enable() (string, bool)
-	NameParts() (string, string, string)
+	Compress() bool
+	IgnoreOK() bool
+	Concurency() int
+	Spining() bool
+}
+type Option func(*IOManager)
+
+func WithConcurrency(concurency int, spining bool) Option {
+	return func(p *IOManager) {
+		p.concurency = concurency
+		p.spining = spining
+	}
 }
 
-func newIOManager(ops ...Option) ioManager {
-	m := &patternManager{
-		filePath: "./",
-		prefix:   "",
-		suffix:   ".log",
-		pattern:  "1-0-0",
-		ignoreOK: false,
-		compress: false,
-		lockFree: false,
-		fileMode: 0644,
+func WithTimePattern(pattern string) Option {
+	return func(p *IOManager) {
+		p.RollingTimePattern = pattern
 	}
-
-	for _, o := range ops {
-		o(m)
-	}
-
-	m.caculateRollingPoint(time.Now())
-
-	return m
 }
-
-type Option func(*patternManager)
-
-func WithPattern(pattern string) Option {
-	return func(p *patternManager) {
-		p.pattern = pattern
+func WithVolumeSize(size string) Option {
+	return func(p *IOManager) {
+		p.RollingVolumeSize = size
 	}
 }
 func WithPath(path string) Option {
-	return func(p *patternManager) {
-		path = strings.TrimSuffix(path, "/")
-		path = path + "/"
-		p.filePath = path
+	return func(p *IOManager) {
+		paths := strings.Split(path, "/")
+		switch len(paths) {
+		case 0:
+		case 1:
+			ss := strings.Split(paths[0], ".")
+			switch len(ss) {
+			case 0:
+			case 1:
+				p.Prefix = ss[0]
+			default:
+				p.Suffix = "." + ss[len(ss)-1]
+				p.Prefix = strings.Join(ss[:len(ss)-1], ".")
+			}
+		default:
+			p.FilePath = strings.Join(paths[:len(paths)-1], "/") + "/"
+			ss := strings.Split(paths[len(paths)-1], ".")
+			switch len(ss) {
+			case 0:
+			case 1:
+				p.Prefix = ss[0]
+			default:
+				p.Suffix = "." + ss[len(ss)-1]
+				p.Prefix = strings.Join(ss[:len(ss)-1], ".")
+			}
+		}
+	}
+}
+func WithDir(dir string) Option {
+	return func(p *IOManager) {
+		dir = strings.TrimSuffix(dir, "/")
+		dir = dir + "/"
+		p.FilePath = dir
 	}
 }
 func WithPrefix(prefix string) Option {
-	return func(p *patternManager) {
-		p.prefix = prefix
-	}
-}
-func WithFileMode(mode uint32) Option {
-	return func(p *patternManager) {
-		p.fileMode = os.FileMode(mode)
+	return func(p *IOManager) {
+		p.Prefix = prefix
 	}
 }
 func WithSuffix(suffix string) Option {
-	return func(p *patternManager) {
-		p.suffix = suffix
+	return func(p *IOManager) {
+		p.Suffix = suffix
+	}
+}
+func WithFileMode(mode uint32) Option {
+	return func(p *IOManager) {
+		p.FileMod = os.FileMode(mode)
 	}
 }
 func WithIgnoreOK() Option {
-	return func(p *patternManager) {
-		p.ignoreOK = true
+	return func(p *IOManager) {
+		p.IsIgnoreOK = true
 	}
 }
 func WithLockFree() Option {
-	return func(p *patternManager) {
-		p.lockFree = true
+	return func(p *IOManager) {
+		p.IsLockFree = true
 	}
 }
 func WithCompress() Option {
-	return func(p *patternManager) {
-		p.compress = true
+	return func(p *IOManager) {
+		p.IsCompress = true
 	}
 }
 
-type patternManager struct {
-	filePath string
+type IOManager struct {
+	FilePath string
 	// file name js like this style: prefix-timestamp-suffix.log
 	// compressed log file is named like this: prefix-timestamp-suffix.tar
-	prefix string
-	suffix string
-	// pattern is just like the crontable style
-	// days-hours-minutes
-	// For example:
-	// 7-0-0
-	// 6-23-60 means the event will fire every 7 days
-	pattern      string
-	fileMode     os.FileMode
-	rollingPoint time.Time
-	ignoreOK     bool
-	compress     bool
-	lockFree     bool
+	Prefix     string
+	Suffix     string
+	FileMod    os.FileMode
+	IsIgnoreOK bool
+	IsCompress bool
+	IsLockFree bool
+
+	concurency int
+	spining    bool
+
+	// pattern is just like the crontable style without year, second minute hour day mounth weekday
+	RollingTimePattern string
+	// VolumeSize can be give a size with K M G
+	RollingVolumeSize string
+	// TimeFormatPattern defined the rolling time pattern which will used to name the .log file
+	TimeFormatPattern string
+
+	// return the file name for rename
+	enable chan string
+
+	// check the condition
+	trigger func()
+
+	//rolling family var takes the rolling checking condition
+	rollingPoint  time.Time
+	rollingVolume int64
+
+	cr       *cron.Cron
+	fileSize int64
+	// use to stop the writer
+	terminate chan int
 }
 
-func (p *patternManager) patternUnmarshal() time.Duration {
-	timeCommand := strings.Split(p.pattern, "-")
-	// TODO fix the return for the split
-	if len(timeCommand) != 3 {
-		log.Println("Invalid arguments")
-		return time.Duration(time.Hour * 24)
+func newManager(ops ...Option) *IOManager {
+	m := &IOManager{
+		FileMod:            os.FileMode(0644),
+		RollingTimePattern: "0 0 * * * *",
+		RollingVolumeSize:  "1G",
+		TimeFormatPattern:  "20060102",
+		enable:             make(chan string),
+		IsLockFree:         false,
+		IsIgnoreOK:         false,
+		cr:                 cron.New(),
 	}
-
-	var offset time.Duration
-
-	i, err := strconv.Atoi(timeCommand[0])
-	if err != nil {
-		log.Println("Invalid arguments")
-		return time.Duration(time.Hour * 24)
+	for _, o := range ops {
+		o(m)
 	}
-	offset += time.Hour * time.Duration(24*i)
-
-	i, err = strconv.Atoi(timeCommand[1])
-	if err != nil {
-		log.Println("Invalid arguments")
-		return time.Duration(time.Hour * 24)
-	}
-	offset += time.Hour * time.Duration(i)
-
-	i, err = strconv.Atoi(timeCommand[2])
-	if err != nil {
-		log.Println("Invalid arguments")
-		return time.Duration(time.Hour * 24)
-	}
-	offset += time.Minute * time.Duration(i)
-
-	return offset
+	m.rollingPoint = time.Now()
+	return m
 }
 
-func (p *patternManager) caculateRollingPoint(t time.Time) {
-	p.rollingPoint = t.Add(p.patternUnmarshal())
-}
+func (m *IOManager) Enable() chan string   { return m.enable }
+func (m *IOManager) WriteN(n int)          { atomic.AddInt64(&m.fileSize, int64(n)) }
+func (m *IOManager) ResetFileSize()        { atomic.SwapInt64(&m.fileSize, 0) }
+func (m *IOManager) LockFree() bool        { return m.IsLockFree }
+func (m *IOManager) IgnoreOK() bool        { return m.IsIgnoreOK }
+func (m *IOManager) Compress() bool        { return m.IsCompress }
+func (m *IOManager) NameParts() []string   { return []string{m.FilePath, m.Prefix, m.Suffix} }
+func (m *IOManager) FileMode() os.FileMode { return m.FileMod }
+func (m *IOManager) Concurency() int       { return m.concurency }
+func (m *IOManager) Spining() bool         { return m.spining }
 
-func (p *patternManager) Enable() (string, bool) {
-	now := time.Now()
-	if now.Before(p.rollingPoint) {
-		return "", false
+func (m *IOManager) parseVolume() {
+	s := []byte(strings.ToUpper(m.RollingVolumeSize))
+
+	var p int64 = 0
+	var unit int64 = 1
+	var unitstr string
+	if s[len(s)-1] == 'B' {
+		tp, _ := strconv.Atoi(string(s[:len(s)-2]))
+		p = int64(tp)
+		unitstr = string(s[len(s)-2:])
+	} else {
+		tp, _ := strconv.Atoi(string(s[:len(s)-1]))
+		p = int64(tp)
+		unitstr = string(s[len(s)-1])
 	}
 
-	p.caculateRollingPoint(now)
+	switch unitstr {
+	case "G", "GB":
+		unit *= 1024
+		fallthrough
+	case "M", "MB":
+		unit *= 1024
+		fallthrough
+	case "K", "KB":
+		unit *= 1024
+	default:
+		m.rollingVolume = 1024 * 1024 * 1024
+		return
+	}
 
-	dur := -p.patternUnmarshal()
-	return p.filePath + p.prefix + now.Add(dur).Format("200601021504") + p.suffix, true
+	m.rollingVolume = p * unit
 }
 
-func (p *patternManager) Path() string {
-	return p.filePath + p.prefix + p.suffix + ".log"
+func NewTimeRotateManager(ops ...Option) Manager {
+	m := newManager(ops...)
+	m.trigger = func() {}
+	m.cr.AddFunc(m.RollingTimePattern, func() {
+		m.enable <- m.FilePath + m.Prefix + m.Suffix + "." + m.rollingPoint.Format(m.TimeFormatPattern)
+		m.rollingPoint = time.Now()
+	})
+	m.cr.Start()
+	return m
 }
-func (p *patternManager) IgnoreOK() bool                      { return p.ignoreOK }
-func (p *patternManager) LockFree() bool                      { return p.lockFree }
-func (p *patternManager) Compress() bool                      { return p.compress }
-func (p *patternManager) FileMode() os.FileMode               { return p.fileMode }
-func (p *patternManager) NameParts() (string, string, string) { return p.filePath, p.prefix, p.suffix }
+
+func NewVolumeRotateManager(ops ...Option) Manager {
+	m := newManager(ops...)
+	m.parseVolume()
+	m.trigger = func() {
+		if atomic.LoadInt64(&m.fileSize) > m.rollingVolume {
+			m.enable <- m.FilePath + m.Prefix + m.Suffix + "." + m.rollingPoint.Format(m.TimeFormatPattern)
+			m.rollingPoint = time.Now()
+		}
+	}
+	return m
+}

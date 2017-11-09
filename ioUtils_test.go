@@ -2,30 +2,50 @@ package bunnystub
 
 import (
 	"os"
-	"time"
+	"sync"
+	"testing"
 )
 
 var dest *os.File
 
-func newWriter() *fileWriter {
-	m := newioManager()
-	f := &fileWriter{
-		event:     make(chan string, 4),
-		buffer:    make(chan []byte, 0x7fffff),
-		precision: time.Tick(time.Duration(Precision) * time.Second),
-		manager:   m,
-		started:   make(chan int, 2),
-		file:      dest,
+func newWriter() IOWriter {
+	wr, err := NewIOWriter("/dev/null", TimeRotate, WithConcurrency(100, true))
+	if err != nil {
+		panic(err)
 	}
+	return wr
+	//m := newManager()
 
-	path, prefix, suffix := m.NameParts()
-	name := path + prefix + time.Now().Format("200601021504") + suffix + ".log"
-	dest, _ = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	//f := &fileWriter{
+	//	event:     make(chan string, 4),
+	//	buffer:    make(chan []byte, 0x7fffff),
+	//	precision: time.Tick(time.Duration(Precision) * time.Second),
+	//	manager:   m,
+	//	started:   make(chan int, 2),
+	//	file:      dest,
+	//}
 
-	go f.conditionWrite()
-	<-f.started
-	<-f.started
-	return f
+	//path, prefix, suffix := m.NameParts()
+	//name := path + prefix + time.Now().Format("200601021504") + suffix + ".log"
+	//dest, _ = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+
+	//go f.conditionWrite()
+	//<-f.started
+	//<-f.started
+	//return f
+}
+
+func TestWrite(t *testing.T) {
+	writer := newWriter()
+	wg := sync.WaitGroup{}
+	for i := 0; i < 1000000; i++ {
+		wg.Add(1)
+		go func() {
+			writer.Write([]byte("hi"))
+			defer wg.Done()
+		}()
+	}
+	wg.Wait()
 }
 
 //func TestNewIOWriter(t *testing.T) {
