@@ -18,9 +18,8 @@ type IOWriter interface {
 }
 
 var (
-	// BufferSize defined the buffer size
-	// about 2MB
-	BufferSize = 0x6ffffff
+	// BufferSize defined the buffer size, by default 1k buffer will be allocate
+	BufferSize = 0x10
 
 	// ErrInternal defined the internal error
 	ErrInternal = errors.New("error internal")
@@ -29,18 +28,6 @@ var (
 	// ErrMakingLogDirFailed means this path can not be created
 	ErrMakingLogDirFailed = errors.New("error in make dir with given path")
 )
-
-type limittedWriter struct {
-	wr        io.Writer
-	condition func()
-}
-
-func warpWriter(w io.Writer, condition func()) io.Writer { return limittedWriter{w, condition} }
-
-func (w limittedWriter) Write(s []byte) (int, error) {
-	w.condition()
-	return w.wr.Write(s)
-}
 
 // NewIOWriter generate a iofilter writer with given ioManager
 func NewIOWriter(path string, kind RotatePolicy, ops ...Option) (IOWriter, error) {
@@ -150,6 +137,18 @@ func NewIOWriter(path string, kind RotatePolicy, ops ...Option) (IOWriter, error
 	writer.startWg.Wait()
 
 	return writer, nil
+}
+
+type limittedWriter struct {
+	wr        io.Writer
+	condition func()
+}
+
+func warpWriter(w io.Writer, condition func()) io.Writer { return limittedWriter{w, condition} }
+
+func (w limittedWriter) Write(s []byte) (int, error) {
+	w.condition()
+	return w.wr.Write(s)
 }
 
 type fileWriter struct {
