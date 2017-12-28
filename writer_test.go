@@ -1,4 +1,4 @@
-package bunnystub
+package rollingwriter
 
 import (
 	"os"
@@ -8,8 +8,16 @@ import (
 
 var dest *os.File
 
-func newWriter() IOWriter {
+func newTWriter() IOWriter {
 	wr, err := NewIOWriter("/dev/null", TimeRotate, WithConcurrency(100, true))
+	if err != nil {
+		panic(err)
+	}
+	return wr
+}
+
+func newVWriter() IOWriter {
+	wr, err := NewIOWriter("/dev/null", VolumeRotate, WithVolumeSize("1024b"))
 	if err != nil {
 		panic(err)
 	}
@@ -36,9 +44,19 @@ func newWriter() IOWriter {
 }
 
 func TestWrite(t *testing.T) {
-	writer := newWriter()
+	writer := newTWriter()
 	wg := sync.WaitGroup{}
-	for i := 0; i < 1000000; i++ {
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			writer.Write([]byte("hi"))
+			defer wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	writer = newVWriter()
+	for i := 0; i < 1000; i++ {
 		wg.Add(1)
 		go func() {
 			writer.Write([]byte("hi"))
