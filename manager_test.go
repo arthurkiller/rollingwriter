@@ -1,4 +1,4 @@
-package rollingwriter
+package bunnystub
 
 import (
 	"os"

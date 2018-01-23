@@ -1,4 +1,4 @@
-package rollingwriter
+package bunnystub
 
 import (
 	"os"
@@ -124,8 +124,9 @@ func (m *manager) ParseVolume(c *Config) {
 }
 
 // GenLogFileName will return the file name for rename
+// filename should be absolute path
 func (m *manager) GenLogFileName(c *Config) string {
-	parts := []string{c.LogPath}
+	parts := []string{c.LogPath} // add the root path-to-log
 
 	// /path-to-log/prefix-filename-suffix.log.2007010215041517
 	if c.Prefix != "" {
@@ -139,6 +140,7 @@ func (m *manager) GenLogFileName(c *Config) string {
 	}
 	file := strings.Join(parts, c.Separator)
 
+	// TODO TimeTagFormat can change with the rolling strategy
 	file = file + ".log." + m.startAt.Format(c.TimeTagFormat)
 
 	// reset the start time to now

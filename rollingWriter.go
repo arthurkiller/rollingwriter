@@ -1,4 +1,4 @@
-package rollingwriter
+package bunnystub
 
 import (
 	"errors"
@@ -27,6 +27,8 @@ var (
 
 	// ErrInternal defined the internal error
 	ErrInternal = errors.New("error internal")
+	// ErrClosed defined write while ctx close
+	ErrClosed = errors.New("error write on close")
 	// ErrInvalidArgument defined the invalid argument
 	ErrInvalidArgument = errors.New("error argument invalid")
 )
@@ -48,7 +50,7 @@ type RollingWriter interface {
 
 // Config give out the config for manager
 type Config struct {
-	// LogPath defined the path of log dir
+	// LogPath defined the full path of log file directory.
 	// there comes out 2 different log file:
 	// 1. the current log
 	//	log file path is located here:
@@ -59,8 +61,8 @@ type Config struct {
 	//
 	// NOTICE: blank field will be ignored
 	// By default I use '-' as separator, you can set it yourself
-	LogPath       string `json:"log_path"`
 	TimeTagFormat string `json:"time_tag_format"`
+	LogPath       string `json:"log_path"`
 	Prefix        string `json:"prefix"`
 	FileName      string `json:"file_name"`
 	Suffix        string `json:"suffix"`
@@ -89,8 +91,8 @@ type Config struct {
 }
 
 // NewDefaultConfig return the default config
-func NewDefaultConfig() *Config {
-	return &Config{
+func NewDefaultConfig() Config {
+	return Config{
 		LogPath:            "./log",
 		TimeTagFormat:      "200601021504",
 		Prefix:             "",
@@ -108,8 +110,11 @@ func NewDefaultConfig() *Config {
 	}
 }
 
+// LogFilePath return the absolute path on log file
 func LogFilePath(c *Config) string {
 	var filepath string
+	// treate the /
+	// c.LogPath is the dir path and should be absolute path
 	if c.LogPath[len(c.LogPath)-1] == '/' {
 		filepath = c.LogPath + c.FileName + ".log"
 	} else {
@@ -158,7 +163,7 @@ func WithSuffix(suffix string) Option {
 	}
 }
 
-// WithSeparator set the sepatator, default separator is -
+// WithSeparator set the sepatator, default separator is '-'
 func WithSeparator(separator string) Option {
 	return func(p *Config) {
 		p.Separator = separator

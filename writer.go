@@ -1,4 +1,4 @@
-package rollingwriter
+package bunnystub
 
 import (
 	"compress/gzip"
@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"os"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 // Writer provide a synchronous writer
@@ -17,23 +19,32 @@ type Writer struct {
 	fire            chan string
 	cf              *Config
 	rollingfilelist chan string
+	errch           chan error
 }
 
 // LockedWriter provide a synchronous writer with lock
 // write operate will be guaranteed by lock
 type LockedWriter struct {
-	lock sync.Mutex
 	Writer
+	lock sync.Mutex
 }
 
-// AsynchronousWriter provied a asynchronous writer with the writer to confirm the write
-// TODO TBD if Sync is needed to be called
+// AsynchronousWriter provide a asynchronous writer with the writer to confirm the write
 type AsynchronousWriter struct {
+	Writer
+
 	ctx     chan int
 	queue   chan []byte
 	errChan chan error
 	wg      sync.WaitGroup
+	once    sync.Once
+}
+
+// BufferWriter provide a parallel safe bufferd writer
+// TODO
+type BufferWriter struct {
 	Writer
+	buffer []byte
 }
 
 // buffer pool for asynchronous writer
@@ -60,16 +71,16 @@ func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 		return nil, err
 	}
 
-	return NewWriterFromConfig(cfg)
+	return NewWriterFromConfig(&cfg)
 }
 
 // NewWriterFromConfig generate the rollingWriter with given option
 func NewWriter(ops ...Option) (RollingWriter, error) {
 	cfg := NewDefaultConfig()
 	for _, opt := range ops {
-		opt(cfg)
+		opt(&cfg)
 	}
-	return NewWriterFromConfig(cfg)
+	return NewWriterFromConfig(&cfg)
 }
 
 // NewWriterFromConfig generate the rollingWriter with given config
@@ -147,40 +158,61 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 }
 
 // AutoRemove will delete the oldest file
-func (w *Writer) AutoRemove() error {
+// TODO if err should be returned or catched?
+// FIXME
+func (w *Writer) AutoRemove() {
 	if len(w.rollingfilelist) > w.cf.MaxRemain {
 		// remove the oldest file
 		file := <-w.rollingfilelist
-		return os.Remove(file)
+		if err := os.Remove(file); err != nil {
+			w.errch <- err
+		}
 	}
-	return nil
 }
 
 // CompressFile compress log file write into .gz and remove source file
-func CompressFile(oldfile *os.File, filename string) error {
+// TODO if err should be returned or catched?
+// FIXME
+func (w *Writer) CompressFile(oldfile *os.File, filename string) {
 	cmpname := filename + ".gz"
 	cmpfile, err := os.OpenFile(cmpname, DefaultFileFlag, DefaultFileMode)
 	defer cmpfile.Close()
 	if err != nil {
-		return err
+		w.errch <- err
+		return
 	}
 	gw := gzip.NewWriter(cmpfile)
 	defer gw.Close()
 
 	if _, err := oldfile.Seek(0, 0); err != nil {
-		return err
+		w.errch <- err
+		return
 	}
 	if _, err := io.Copy(gw, oldfile); err != nil {
-		cmpfile.Close()
-		os.Remove(cmpname)
-		return err
+		if err := cmpfile.Close(); err != nil {
+			w.errch <- err
+		}
+		if err := os.Remove(cmpname); err != nil {
+			w.errch <- err
+		}
+		w.errch <- err
+		return
 	}
-	return os.Remove(filename) //remove *.log file
+	os.Remove(filename) //remove *.log file
 }
 
-// Reopen is parallel safe? FIXME BUG
+// AsynchronousWriterErrorChan return the error channel for asyn writer
+func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
+	if w, ok := wr.(*AsynchronousWriter); ok {
+		return w.errChan, nil
+	}
+	return nil, ErrInvalidArgument
+}
+
 // func (w *LockedWriter) Reopen(file string) error {
 // func (w *AsynchronousWriter) Reopen(file string) error {
+// TODO if err should be returned or catched?
+// FIXME
 func (w *Writer) Reopen(file string) error {
 	// do the rename
 	if err := os.Rename(w.absolutePath, file); err != nil {
@@ -193,15 +225,20 @@ func (w *Writer) Reopen(file string) error {
 	if err != nil {
 		return err
 	}
-	w.file = newfile
+
+	oldFd := unsafe.Pointer(w.file.Fd())
+	atomic.SwapPointer(&oldFd, unsafe.Pointer(newfile.Fd()))
 
 	if w.cf.Compress {
-		go CompressFile(oldfile, file)
+		// TODO if err should be returned or catched?
+		// FIXME
+		go w.CompressFile(oldfile, file)
 	}
 	if w.cf.MaxRemain > 0 {
+		// TODO if err should be returned or catched?
+		// FIXME
 		go w.AutoRemove()
 	}
-	// BUG error handle
 
 	return oldfile.Close()
 }
@@ -241,12 +278,15 @@ func (w *LockedWriter) Write(b []byte) (int, error) {
 }
 
 // Only when the error channel is empty, otherwise nothing will write and the last error will be return
+// return the error channel
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 	select {
 	case err := <-w.errChan:
 		// return the error
 		// NOTICE this error is caused by last write
 		return 0, err
+	case <-w.ctx:
+		return 0, ErrClosed
 	case filename := <-w.fire:
 		// do the reopen
 		if err := w.Reopen(filename); err != nil {
@@ -257,27 +297,18 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 		for len(b) > 0 {
 			buf := (_asyncBufferPool.Get()).([]byte)
 			n := copy(buf, b)
-			// Write on the Close Channel BUG
+			// Write on the Close Channel FIXME
 			w.queue <- buf
 			b = b[n:]
 		}
 		return l, nil
 	default:
-		// TODO TBD ???
-		// is here we need not to block while the channel is full?
-		// Or return a special error?
-		//select {
-		//	case w.queue <- b:
-		//		return len(b), nil
-		//	default: XXX
-		//		return 0,ERRFULL
-		//}
-
+		// here we need to block while the channel is full
 		l := len(b)
 		for len(b) > 0 {
 			buf := (_asyncBufferPool.Get()).([]byte)
 			n := copy(buf, b)
-			// Write on the Close Channel BUG
+			// Write on the Close Channel FIXME
 			w.queue <- buf
 			b = b[n:]
 		}
@@ -309,21 +340,6 @@ func (w *AsynchronousWriter) writer() {
 	}
 }
 
-// onClose process remaining bufferd data for asynchronous writer
-func (w *AsynchronousWriter) onClose() error {
-	var err error
-	var b []byte
-	for b = range w.queue {
-		if _, err = w.file.Write(b); err != nil {
-			_asyncBufferPool.Put(b)
-			// writer exit on error
-			return err
-		}
-		_asyncBufferPool.Put(b)
-	}
-	return nil
-}
-
 // Close the file and return
 func (w *Writer) Close() error {
 	return w.file.Close()
@@ -338,10 +354,29 @@ func (w *LockedWriter) Close() error {
 
 // Close lock and close the file
 func (w *AsynchronousWriter) Close() error {
-	close(w.queue)
-	close(w.ctx)
+	w.once.Do(func() {
+		close(w.queue)
+		close(w.ctx)
+	})
+
 	if err := w.onClose(); err != nil {
 		w.errChan <- err
 	}
 	return w.file.Close()
+}
+
+// onClose process remaining bufferd data for asynchronous writer
+func (w *AsynchronousWriter) onClose() error {
+	var err error
+	var b []byte
+	for b = range w.queue {
+		// flush all remaining field
+		if _, err = w.file.Write(b); err != nil {
+			_asyncBufferPool.Put(b)
+			// writer exit on error
+			return err
+		}
+		_asyncBufferPool.Put(b)
+	}
+	return nil
 }
