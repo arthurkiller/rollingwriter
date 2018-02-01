@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 )
 
-// Writer provide a synchronous writer
+// Writer provide a synchronous file writer
 // if Lock is set true, write will be guaranteed by lock
 type Writer struct {
 	file            *os.File
@@ -19,7 +20,6 @@ type Writer struct {
 	fire            chan string
 	cf              *Config
 	rollingfilelist chan string
-	errch           chan error
 }
 
 // LockedWriter provide a synchronous writer with lock
@@ -41,10 +41,10 @@ type AsynchronousWriter struct {
 }
 
 // BufferWriter provide a parallel safe bufferd writer
-// TODO
+// TBD TODO
 type BufferWriter struct {
 	Writer
-	buffer []byte
+	wr io.Writer
 }
 
 // buffer pool for asynchronous writer
@@ -108,6 +108,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		filechan = make(chan string, c.MaxRemain+1)
 	}
 
+	// Start the Manager
 	mng, err := NewManager(c)
 	if err != nil {
 		return nil, err
@@ -158,47 +159,37 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 }
 
 // AutoRemove will delete the oldest file
-// TODO if err should be returned or catched?
-// FIXME
-func (w *Writer) AutoRemove() {
+func (w *Writer) AutoRemove() error {
 	if len(w.rollingfilelist) > w.cf.MaxRemain {
 		// remove the oldest file
 		file := <-w.rollingfilelist
 		if err := os.Remove(file); err != nil {
-			w.errch <- err
+			return err
 		}
 	}
+	return nil
 }
 
 // CompressFile compress log file write into .gz and remove source file
-// TODO if err should be returned or catched?
-// FIXME
-func (w *Writer) CompressFile(oldfile *os.File, filename string) {
-	cmpname := filename + ".gz"
+func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 	cmpfile, err := os.OpenFile(cmpname, DefaultFileFlag, DefaultFileMode)
 	defer cmpfile.Close()
 	if err != nil {
-		w.errch <- err
-		return
+		return err
 	}
 	gw := gzip.NewWriter(cmpfile)
 	defer gw.Close()
 
 	if _, err := oldfile.Seek(0, 0); err != nil {
-		w.errch <- err
-		return
+		return err
 	}
 	if _, err := io.Copy(gw, oldfile); err != nil {
-		if err := cmpfile.Close(); err != nil {
-			w.errch <- err
-		}
 		if err := os.Remove(cmpname); err != nil {
-			w.errch <- err
+			return err
 		}
-		w.errch <- err
-		return
+		return err
 	}
-	os.Remove(filename) //remove *.log file
+	return os.Remove(cmpname + ".tmp") //remove *.log.tmp file
 }
 
 // AsynchronousWriterErrorChan return the error channel for asyn writer
@@ -211,8 +202,6 @@ func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
 
 // func (w *LockedWriter) Reopen(file string) error {
 // func (w *AsynchronousWriter) Reopen(file string) error {
-// TODO if err should be returned or catched?
-// FIXME
 func (w *Writer) Reopen(file string) error {
 	// do the rename
 	if err := os.Rename(w.absolutePath, file); err != nil {
@@ -226,21 +215,36 @@ func (w *Writer) Reopen(file string) error {
 		return err
 	}
 
-	oldFd := unsafe.Pointer(w.file.Fd())
-	atomic.SwapPointer(&oldFd, unsafe.Pointer(newfile.Fd()))
+	// swap the unsafe pointer
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
 
-	if w.cf.Compress {
-		// TODO if err should be returned or catched?
-		// FIXME
-		go w.CompressFile(oldfile, file)
-	}
-	if w.cf.MaxRemain > 0 {
-		// TODO if err should be returned or catched?
-		// FIXME
-		go w.AutoRemove()
-	}
+	// add to the delete file list
+	w.rollingfilelist <- file
 
-	return oldfile.Close()
+	// Do aditional jobs
+	go func() {
+		defer oldfile.Close()
+		if w.cf.Compress {
+			if err := os.Rename(file, file+".tmp"); err != nil {
+				log.Println("error in compress rename tempfile", err)
+				return
+			}
+			err = w.CompressFile(oldfile, file)
+			if err != nil { // oldfile did not delete properly
+				log.Println("error in compress log file", err)
+				return
+			}
+		}
+
+		if w.cf.MaxRemain >= 0 {
+			err := w.AutoRemove()
+			if err != nil {
+				log.Println("error in auto remove log file", err)
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (w *Writer) Write(b []byte) (int, error) {
@@ -250,7 +254,6 @@ func (w *Writer) Write(b []byte) (int, error) {
 		if err := w.Reopen(filename); err != nil {
 			return 0, err
 		}
-
 		return w.file.Write(b)
 	default:
 		return w.file.Write(b)

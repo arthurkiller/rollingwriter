@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 )
 
 const (
@@ -52,29 +53,35 @@ type RollingWriter interface {
 type Config struct {
 	// LogPath defined the full path of log file directory.
 	// there comes out 2 different log file:
+	//
 	// 1. the current log
 	//	log file path is located here:
-	//	[LogPath]/FileName.log
+	//	[LogPath]/[FileName].log
+	//
 	// 2. the tuncated log file
 	//	the tuncated log file is backup here:
-	//	[LogPath]/[TimeTag]-[Prefix]-[FileName]-[Suffix].log.gz
+	//	[LogPath]/[FileName].log.[TimeTag]
+	//  if compressed true
+	//	[LogPath]/[FileName].log.gz.[TimeTag]
 	//
 	// NOTICE: blank field will be ignored
 	// By default I use '-' as separator, you can set it yourself
 	TimeTagFormat string `json:"time_tag_format"`
 	LogPath       string `json:"log_path"`
-	Prefix        string `json:"prefix"`
-	FileName      string `json:"file_name"`
-	Suffix        string `json:"suffix"`
-	Separator     string `json:"separator"`
-	AutoCreate    bool   `json:"auto_create"`
-	MaxRemain     int    `json:"max_remain"`
+	//Prefix        string `json:"prefix"`
+	FileName string `json:"file_name"`
+	//Suffix        string `json:"suffix"`
+	//Separator string `json:"separator"`
+	MaxRemain int `json:"max_remain"`
 
 	// RollingPolicy give out the rolling policy
 	// We got 3 policies(actually, 2):
+	//
 	//	1. WithoutRolling: no rolling will happen
 	//	2. TimeRolling: rolling by time
 	//	3. VolumeRolling: rolling by file size
+	//
+
 	RollingPolicy      int    `json:"rolling_ploicy"`
 	RollingTimePattern string `json:"rolling_time_pattern"`
 	RollingVolumeSize  string `json:"rolling_volume_size"`
@@ -85,8 +92,7 @@ type Config struct {
 	// by default the writer will be synchronous
 	Asynchronous bool `json:"asychronous"`
 	// Lock enable the lock for writer, the writer will guarantee parallel safity
-	// by defalut, nothing will be guarantee
-	// NOTICE: this will take effect only when writer is synchronoused
+	// NOTICE: this will take effect only when writer is synchronous
 	Lock bool `json:"lock"`
 }
 
@@ -95,11 +101,7 @@ func NewDefaultConfig() Config {
 	return Config{
 		LogPath:            "./log",
 		TimeTagFormat:      "200601021504",
-		Prefix:             "",
 		FileName:           "log",
-		Suffix:             "",
-		Separator:          "-",
-		AutoCreate:         false,
 		MaxRemain:          -1,            // disable auto delete
 		RollingPolicy:      1,             // TimeRotate by default
 		RollingTimePattern: "0 0 0 * * *", // Rolling at 00:00 AM everyday
@@ -113,13 +115,8 @@ func NewDefaultConfig() Config {
 // LogFilePath return the absolute path on log file
 func LogFilePath(c *Config) string {
 	var filepath string
-	// treate the /
-	// c.LogPath is the dir path and should be absolute path
-	if c.LogPath[len(c.LogPath)-1] == '/' {
-		filepath = c.LogPath + c.FileName + ".log"
-	} else {
-		filepath = c.LogPath + "/" + c.FileName + ".log"
-	}
+	// trim the /
+	filepath = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log"
 	return filepath
 }
 
@@ -133,12 +130,11 @@ func WithTimeTagFormat(format string) Option {
 	}
 }
 
-// WithLogPath set the log dir, set autoCreage true to enable auto create dir tree
+// WithLogPath set the log dir and auto create dir tree
 // if the dir/path is not exist
-func WithLogPath(path string, autoCreate bool) Option {
+func WithLogPath(path string) Option {
 	return func(p *Config) {
 		p.LogPath = path
-		p.AutoCreate = autoCreate
 	}
 }
 
@@ -150,25 +146,24 @@ func WithFileName(name string) Option {
 }
 
 // WithPrefix set the prefix
-func WithPrefix(prefix string) Option {
-	return func(p *Config) {
-		p.Prefix = prefix
-	}
-}
-
+//func WithPrefix(prefix string) Option {
+//	return func(p *Config) {
+//		p.Prefix = prefix
+//	}
+//}
 // WithSuffix set the suffix
-func WithSuffix(suffix string) Option {
-	return func(p *Config) {
-		p.Suffix = suffix
-	}
-}
+//func WithSuffix(suffix string) Option {
+//	return func(p *Config) {
+//		p.Suffix = suffix
+//	}
+//}
 
 // WithSeparator set the sepatator, default separator is '-'
-func WithSeparator(separator string) Option {
-	return func(p *Config) {
-		p.Separator = separator
-	}
-}
+//func WithSeparator(separator string) Option {
+//	return func(p *Config) {
+//		p.Separator = separator
+//	}
+//}
 
 // WithAsynchronous enable the asynchronous write for writer
 func WithAsynchronous() Option {

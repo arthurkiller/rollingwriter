@@ -1,6 +1,7 @@
 package bunnystub
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -56,11 +57,14 @@ func NewManager(c *Config) (Manager, error) {
 					// on close, exit
 					return
 				case <-timer:
-					if file, err := os.Open(filepath); err == nil {
-						if info, err := file.Stat(); err == nil {
-							if info.Size() > m.thresholdSize {
-								m.fire <- m.GenLogFileName(c)
-							}
+					file, err := os.Open(filepath)
+					if err != nil {
+						// SHOULD NOT HAPPEN
+						log.Println("error in open file", err)
+					}
+					if info, err := file.Stat(); err == nil {
+						if info.Size() > m.thresholdSize {
+							m.fire <- m.GenLogFileName(c)
 						}
 					}
 				}
@@ -126,22 +130,14 @@ func (m *manager) ParseVolume(c *Config) {
 // GenLogFileName will return the file name for rename
 // filename should be absolute path
 func (m *manager) GenLogFileName(c *Config) string {
-	parts := []string{c.LogPath} // add the root path-to-log
-
-	// /path-to-log/prefix-filename-suffix.log.2007010215041517
-	if c.Prefix != "" {
-		parts = append(parts, c.Prefix)
+	// /path-to-log/filename.log.2007010215041517
+	// TODO TimeTagFormat should change with the rolling strategy
+	var file string
+	if c.Compress {
+		file = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log.gz." + m.startAt.Format(c.TimeTagFormat)
+	} else {
+		file = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log." + m.startAt.Format(c.TimeTagFormat)
 	}
-	if c.FileName != "" {
-		parts = append(parts, c.FileName)
-	}
-	if c.Suffix != "" {
-		parts = append(parts, c.Suffix)
-	}
-	file := strings.Join(parts, c.Separator)
-
-	// TODO TimeTagFormat can change with the rolling strategy
-	file = file + ".log." + m.startAt.Format(c.TimeTagFormat)
 
 	// reset the start time to now
 	m.startAt = time.Now()
