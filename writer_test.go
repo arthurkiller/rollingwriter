@@ -1,47 +1,113 @@
 package bunnystub
 
 import (
+	"io"
+	"math/rand"
 	"os"
 	"sync"
 	"testing"
 )
 
-var dest *os.File
-
-func newWriter() Writer {
+func clean() {
+	os.Remove("./test/unittest*")
+	os.Remove("./test")
 }
 
-func newLockedWriter() LockedWriter {
-	return wr
+func newWriter() *Writer {
+	cfg := NewDefaultConfig()
+	cfg.LogPath = "./test"
+	cfg.FileName = "unittest"
+	cfg.Asynchronous = false
+	cfg.Lock = false
+	w, _ := NewWriterFromConfig(&cfg)
+	return w.(*Writer)
 }
 
-func newAsynWriter() AsynchronousWriter {
-	return wr
+func newLockedWriter() *LockedWriter {
+	cfg := NewDefaultConfig()
+	cfg.LogPath = "./test"
+	cfg.FileName = "unittest"
+	cfg.Asynchronous = false
+	cfg.Lock = true
+	w, _ := NewWriterFromConfig(&cfg)
+	return w.(*LockedWriter)
 }
 
-func newBufferWriter() BufferWriter {
-	return wr
+func newAsynWriter() *AsynchronousWriter {
+	cfg := NewDefaultConfig()
+	cfg.LogPath = "./test"
+	cfg.FileName = "unittest"
+	cfg.Asynchronous = true
+	w, _ := NewWriterFromConfig(&cfg)
+	return w.(*AsynchronousWriter)
+}
+
+// TODO
+func newBufferWriter() *BufferWriter {
+	return &BufferWriter{}
 }
 
 func TestWrite(t *testing.T) {
-	writer := newTWriter()
+	var writer io.WriteCloser
+	var c int = 10000
+	var l int = 1024
 	wg := sync.WaitGroup{}
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func() {
-			writer.Write([]byte("hi"))
-			defer wg.Done()
-		}()
-	}
-	wg.Wait()
 
-	writer = newVWriter()
-	for i := 0; i < 1000; i++ {
+	writer = newWriter()
+	for i := 0; i < c; i++ {
 		wg.Add(1)
+		bf := make([]byte, l)
+		rand.Read(bf)
 		go func() {
-			writer.Write([]byte("hi"))
+			writer.Write(bf)
 			defer wg.Done()
 		}()
 	}
 	wg.Wait()
+	writer.Close()
+	clean()
+
+	writer = newLockedWriter()
+	for i := 0; i < c; i++ {
+		wg.Add(1)
+		bf := make([]byte, l)
+		rand.Read(bf)
+		go func() {
+			writer.Write(bf)
+			defer wg.Done()
+		}()
+	}
+	wg.Wait()
+	writer.Close()
+	clean()
+
+	writer = newAsynWriter()
+	for i := 0; i < c; i++ {
+		wg.Add(1)
+		bf := make([]byte, l)
+		rand.Read(bf)
+		go func() {
+			writer.Write(bf)
+			defer wg.Done()
+		}()
+	}
+	wg.Wait()
+	writer.Close()
+	clean()
+
+	// TODO
+	//writer = newBufferWriter()
+	//for i := 0; i < c; i++ {
+	//	wg.Add(1)
+	//	bf := make([]byte, l)
+	//	rand.Read(bf)
+	//	go func() {
+	//		writer.Write(bf)
+	//		defer wg.Done()
+	//	}()
+	//}
+	//wg.Wait()
+}
+
+func TestReopen(t *testing.T) {
 }
