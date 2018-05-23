@@ -88,9 +88,9 @@ func (m *manager) Close() {
 func (m *manager) ParseVolume(c *Config) {
 	s := []byte(strings.ToUpper(c.RollingVolumeSize))
 
-	if !(strings.Contains(c.RollingVolumeSize, "K") || strings.Contains(c.RollingVolumeSize, "M") ||
-		strings.Contains(c.RollingVolumeSize, "G") || strings.Contains(c.RollingVolumeSize, "KB") ||
-		strings.Contains(c.RollingVolumeSize, "MB") || strings.Contains(c.RollingVolumeSize, "GB")) {
+	if !(strings.Contains(string(s), "K") || strings.Contains(string(s), "M") ||
+		strings.Contains(string(s), "G") || strings.Contains(string(s), "KB") ||
+		strings.Contains(string(s), "MB") || strings.Contains(string(s), "GB")) {
 
 		// set the default threshold with 1GB
 		m.thresholdSize = 1024 * 1024 * 1024

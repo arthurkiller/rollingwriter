@@ -32,7 +32,6 @@ type LockedWriter struct {
 // AsynchronousWriter provide a asynchronous writer with the writer to confirm the write
 type AsynchronousWriter struct {
 	Writer
-
 	ctx     chan int
 	queue   chan []byte
 	errChan chan error
@@ -41,47 +40,14 @@ type AsynchronousWriter struct {
 }
 
 // BufferWriter provide a parallel safe bufferd writer
-// TBD TODO XXX FIXME
+// TODO TBD
 type BufferWriter struct {
 	Writer
 	wr io.Writer
 }
 
 // buffer pool for asynchronous writer
-var _asyncBufferPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, BufferSize)
-	},
-}
-
-// NewWriterFromConfig generate the rollingWriter with given config file
-func NewWriterFromConfigFile(path string) (RollingWriter, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	cfg := NewDefaultConfig()
-	buf, err := ioutil.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(buf, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewWriterFromConfig(&cfg)
-}
-
-// NewWriterFromConfig generate the rollingWriter with given option
-func NewWriter(ops ...Option) (RollingWriter, error) {
-	cfg := NewDefaultConfig()
-	for _, opt := range ops {
-		opt(&cfg)
-	}
-	return NewWriterFromConfig(&cfg)
-}
+var _asyncBufferPool = NewLeakyBuf(BufferLen, BufferSize)
 
 // NewWriterFromConfig generate the rollingWriter with given config
 func NewWriterFromConfig(c *Config) (RollingWriter, error) {
@@ -154,13 +120,41 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			}
 		}
 	}
-
 	return writer, nil
+}
+
+// NewWriterFromConfig generate the rollingWriter with given option
+func NewWriter(ops ...Option) (RollingWriter, error) {
+	cfg := NewDefaultConfig()
+	for _, opt := range ops {
+		opt(&cfg)
+	}
+	return NewWriterFromConfig(&cfg)
+}
+
+// NewWriterFromConfig generate the rollingWriter with given config file
+func NewWriterFromConfigFile(path string) (RollingWriter, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg := NewDefaultConfig()
+	buf, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(buf, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewWriterFromConfig(&cfg)
 }
 
 // AutoRemove will delete the oldest file
 func (w *Writer) AutoRemove() error {
-	if len(w.rollingfilelist) > w.cf.MaxRemain {
+	for len(w.rollingfilelist) > w.cf.MaxRemain {
 		// remove the oldest file
 		file := <-w.rollingfilelist
 		if err := os.Remove(file); err != nil {
@@ -296,10 +290,14 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 
 		l := len(b)
 		for len(b) > 0 {
-			buf := (_asyncBufferPool.Get()).([]byte)
+			buf := _asyncBufferPool.Get()
 			n := copy(buf, b)
 			// Write on the Close Channel FIXME
-			w.queue <- buf
+			select {
+			case w.queue <- buf:
+			default:
+				return 0, ErrClosed
+			}
 			b = b[n:]
 		}
 		return l, nil
@@ -307,10 +305,14 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 		// here we need to block while the channel is full
 		l := len(b)
 		for len(b) > 0 {
-			buf := (_asyncBufferPool.Get()).([]byte)
+			buf := _asyncBufferPool.Get()
 			n := copy(buf, b)
 			// Write on the Close Channel FIXME
-			w.queue <- buf
+			select {
+			case w.queue <- buf:
+			default:
+				return 0, ErrClosed
+			}
 			b = b[n:]
 		}
 		return l, nil
