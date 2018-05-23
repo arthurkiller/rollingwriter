@@ -1,4 +1,4 @@
-package bunnystub
+package rollingwriter
 
 import (
 	"crypto/rand"

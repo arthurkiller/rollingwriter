@@ -1,4 +1,4 @@
-package bunnystub
+package rollingwriter
 
 // LeakyBuf provides leaky buffer, based on the example in Effective Go.
 type LeakyBuf struct {
