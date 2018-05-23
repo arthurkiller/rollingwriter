@@ -129,18 +129,15 @@ func (m *manager) ParseVolume(c *Config) {
 
 // GenLogFileName will return the file name for rename
 // filename should be absolute path
-func (m *manager) GenLogFileName(c *Config) string {
+func (m *manager) GenLogFileName(c *Config) (file string) {
 	// /path-to-log/filename.log.2007010215041517
 	// TODO TimeTagFormat should change with the rolling strategy
-	var file string
 	if c.Compress {
 		file = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log.gz." + m.startAt.Format(c.TimeTagFormat)
 	} else {
 		file = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log." + m.startAt.Format(c.TimeTagFormat)
 	}
-
 	// reset the start time to now
 	m.startAt = time.Now()
-
-	return file
+	return
 }

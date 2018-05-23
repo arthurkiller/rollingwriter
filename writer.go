@@ -41,7 +41,7 @@ type AsynchronousWriter struct {
 }
 
 // BufferWriter provide a parallel safe bufferd writer
-// TBD TODO
+// TBD TODO XXX FIXME
 type BufferWriter struct {
 	Writer
 	wr io.Writer
@@ -258,7 +258,6 @@ func (w *Writer) Write(b []byte) (int, error) {
 	default:
 		return w.file.Write(b)
 	}
-	return -1, ErrInternal
 }
 
 func (w *LockedWriter) Write(b []byte) (int, error) {
@@ -277,7 +276,6 @@ func (w *LockedWriter) Write(b []byte) (int, error) {
 		defer w.lock.Unlock()
 		return w.file.Write(b)
 	}
-	return -1, ErrInternal
 }
 
 // Only when the error channel is empty, otherwise nothing will write and the last error will be return
@@ -317,7 +315,6 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 		}
 		return l, nil
 	}
-	return -1, ErrInternal
 }
 
 // writer do the asynchronous write independently
