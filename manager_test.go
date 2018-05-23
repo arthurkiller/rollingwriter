@@ -23,14 +23,12 @@ func TestParseVolume(t *testing.T) {
 	assert.Equal(t, int64(1024), m.thresholdSize)
 	c.RollingVolumeSize = "2k"
 	m.ParseVolume(c)
-	//
 	assert.Equal(t, int64(2*1024), m.thresholdSize)
 	c.RollingVolumeSize = "1KB"
 	m.ParseVolume(c)
 	assert.Equal(t, int64(1024), m.thresholdSize)
 	c.RollingVolumeSize = "1mb"
 	m.ParseVolume(c)
-	//
 	assert.Equal(t, int64(1024*1024), m.thresholdSize)
 	c.RollingVolumeSize = "1MB"
 	m.ParseVolume(c)

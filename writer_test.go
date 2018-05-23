@@ -9,7 +9,7 @@ import (
 )
 
 func clean() {
-	os.Remove("./test/unittest*")
+	os.Remove("./test/unittest.log")
 	os.Remove("./test")
 }
 
