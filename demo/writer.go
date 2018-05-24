@@ -20,16 +20,16 @@ func main() {
 		// - 时间滚动: 配置策略如同 crontable, 例如,每天0:0切分, 则配置 0 0 0 * * *
 		// - 大小滚动: 配置单个日志文件(未压缩)的滚动大小门限, 入1G, 500M
 		RollingPolicy:      rollingwriter.TimeRolling, //配置滚动策略 norolling timerolling volumerolling
-		RollingTimePattern: "1 * * * * *",             //配置时间滚动策略
-		RollingVolumeSize:  "20M",                     //配置截断文件下限大小
+		RollingTimePattern: "* * * * * *",             //配置时间滚动策略
+		RollingVolumeSize:  "500M",                    //配置截断文件下限大小
 		Compress:           true,                      //配置是否压缩存储
 
 		// writer 支持3种方式:
 		// - 无保护的 writer: 不提供并发安全保障
 		// - lock 保护的 writer: 提供由 mutex 保护的并发安全保障
 		// - 异步 writer: 异步 write, 并发安全. 异步开启后忽略 Lock 选项
-		Asynchronous: true, //配置是否异步写
-		Lock:         true, //配置是否同步加锁写
+		Asynchronous: false, //配置是否异步写
+		Lock:         true,  //配置是否同步加锁写
 	}
 
 	// 创建一个 writer
