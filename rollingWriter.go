@@ -113,7 +113,6 @@ func NewDefaultConfig() Config {
 // LogFilePath return the absolute path on log file
 func LogFilePath(c *Config) string {
 	var filepath string
-	// trim the /
 	filepath = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log"
 	return filepath
 }
@@ -142,26 +141,6 @@ func WithFileName(name string) Option {
 		p.FileName = name
 	}
 }
-
-// WithPrefix set the prefix
-//func WithPrefix(prefix string) Option {
-//	return func(p *Config) {
-//		p.Prefix = prefix
-//	}
-//}
-// WithSuffix set the suffix
-//func WithSuffix(suffix string) Option {
-//	return func(p *Config) {
-//		p.Suffix = suffix
-//	}
-//}
-
-// WithSeparator set the sepatator, default separator is '-'
-//func WithSeparator(separator string) Option {
-//	return func(p *Config) {
-//		p.Separator = separator
-//	}
-//}
 
 // WithAsynchronous enable the asynchronous write for writer
 func WithAsynchronous() Option {

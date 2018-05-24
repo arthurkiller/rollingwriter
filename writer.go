@@ -228,7 +228,7 @@ func (w *Writer) Reopen(file string) error {
 				return
 			}
 			err = w.CompressFile(oldfile, file)
-			if err != nil { // oldfile did not delete properly
+			if err != nil {
 				log.Println("error in compress log file", err)
 				return
 			}
