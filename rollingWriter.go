@@ -70,10 +70,8 @@ type Config struct {
 	// By default I use '-' as separator, you can set it yourself
 	TimeTagFormat string `json:"time_tag_format"`
 	LogPath       string `json:"log_path"`
-	//Prefix        string `json:"prefix"`
-	FileName string `json:"file_name"`
-	//Suffix        string `json:"suffix"`
-	//Separator string `json:"separator"`
+	FileName      string `json:"file_name"`
+	// MaxRemain will auto clear the roling file list, set 0 will disable auto clean
 	MaxRemain int `json:"max_remain"`
 
 	// RollingPolicy give out the rolling policy
@@ -82,8 +80,6 @@ type Config struct {
 	//	1. WithoutRolling: no rolling will happen
 	//	2. TimeRolling: rolling by time
 	//	3. VolumeRolling: rolling by file size
-	//
-
 	RollingPolicy      int    `json:"rolling_ploicy"`
 	RollingTimePattern string `json:"rolling_time_pattern"`
 	RollingVolumeSize  string `json:"rolling_volume_size"`

@@ -72,7 +72,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 
 	filechan := make(chan string)
 	if c.MaxRemain > 0 {
-		filechan = make(chan string, c.MaxRemain+1)
+		filechan = make(chan string, c.MaxRemain*7)
 	}
 
 	// Start the Manager
@@ -155,15 +155,16 @@ func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 }
 
 // AutoRemove will delete the oldest file
-func (w *Writer) AutoRemove() error {
+func (w *Writer) AutoRemove() {
 	for len(w.rollingfilelist) > w.cf.MaxRemain {
 		// remove the oldest file
-		file := <-w.rollingfilelist
-		if err := os.Remove(file); err != nil {
-			return err
-		}
+		go func() {
+			file := <-w.rollingfilelist
+			if err := os.Remove(file); err != nil {
+				log.Println("error in auto remove log file", err)
+			}
+		}()
 	}
-	return nil
 }
 
 // CompressFile compress log file write into .gz and remove source file
@@ -215,6 +216,7 @@ func (w *Writer) Reopen(file string) error {
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
 
 	// add to the delete file list
+	//FIXME if the rolling list full, here will be blocked
 	w.rollingfilelist <- file
 
 	// Do aditional jobs
@@ -232,11 +234,8 @@ func (w *Writer) Reopen(file string) error {
 			}
 		}
 
-		if w.cf.MaxRemain >= 0 {
-			err := w.AutoRemove()
-			if err != nil {
-				log.Println("error in auto remove log file", err)
-			}
+		if w.cf.MaxRemain > 0 {
+			w.AutoRemove()
 		}
 	}()
 
@@ -304,14 +303,8 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 			return l, nil
 		default:
 			// here we need to block while the channel is full
-			l := len(b)
-			for len(b) > 0 {
-				buf := _asyncBufferPool.Get()
-				n := copy(buf, b)
-				w.queue <- buf[:n]
-				b = b[n:]
-			}
-			return l, nil
+			w.queue <- append(_asyncBufferPool.Get()[0:], b...)[:len(b)]
+			return len(b), nil
 		}
 	}
 	return 0, ErrClosed
