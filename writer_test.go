@@ -54,16 +54,19 @@ func TestWrite(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	writer = newWriter()
-	for i := 0; i < c; i++ {
-		wg.Add(1)
-		bf := make([]byte, l)
-		rand.Read(bf)
-		go func() {
-			writer.Write(bf)
-			defer wg.Done()
-		}()
-	}
-	wg.Wait()
+	bf := make([]byte, l)
+	rand.Read(bf)
+	writer.Write(bf)
+	//for i := 0; i < c; i++ {
+	//	wg.Add(1)
+	//	bf := make([]byte, l)
+	//	rand.Read(bf)
+	//	go func() {
+	//		writer.Write(bf)
+	//		defer wg.Done()
+	//	}()
+	//}
+	//wg.Wait()
 	writer.Close()
 	clean()
 

@@ -35,6 +35,7 @@ type AsynchronousWriter struct {
 	ctx     chan int
 	queue   chan []byte
 	errChan chan error
+	closed  int32
 	wg      sync.WaitGroup
 	once    sync.Once
 }
@@ -86,6 +87,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			queue:   make(chan []byte, QueueSize),
 			errChan: make(chan error),
 			wg:      sync.WaitGroup{},
+			closed:  0,
 			Writer: Writer{
 				file:            file,
 				absolutePath:    filepath,
@@ -275,68 +277,62 @@ func (w *LockedWriter) Write(b []byte) (int, error) {
 // Only when the error channel is empty, otherwise nothing will write and the last error will be return
 // return the error channel
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
-	select {
-	case err := <-w.errChan:
-		// return the error
-		// NOTICE this error is caused by last write
-		return 0, err
-	case <-w.ctx:
-		return 0, ErrClosed
-	case filename := <-w.fire:
-		// do the reopen
-		if err := w.Reopen(filename); err != nil {
+	if atomic.LoadInt32(&w.closed) == 0 {
+		select {
+		case err := <-w.errChan:
+			// return the error
+			// NOTICE this error caused by last write maybe ignored
 			return 0, err
-		}
 
-		l := len(b)
-		for len(b) > 0 {
-			buf := _asyncBufferPool.Get()
-			n := copy(buf, b)
-			// Write on the Close Channel FIXME
-			select {
-			case w.queue <- buf:
-			default:
-				return 0, ErrClosed
+		// here we will not handle the ctx close
+		//case <-w.ctx:
+		//	return 0, ErrClosed
+
+		case filename := <-w.fire:
+			// do the reopen
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
 			}
-			b = b[n:]
-		}
-		return l, nil
-	default:
-		// here we need to block while the channel is full
-		l := len(b)
-		for len(b) > 0 {
-			buf := _asyncBufferPool.Get()
-			n := copy(buf, b)
-			// Write on the Close Channel FIXME
-			select {
-			case w.queue <- buf:
-			default:
-				return 0, ErrClosed
+
+			l := len(b)
+			for len(b) > 0 {
+				buf := _asyncBufferPool.Get()
+				n := copy(buf, b)
+				w.queue <- buf[:n]
+				b = b[n:]
 			}
-			b = b[n:]
+			return l, nil
+		default:
+			// here we need to block while the channel is full
+			l := len(b)
+			for len(b) > 0 {
+				buf := _asyncBufferPool.Get()
+				n := copy(buf, b)
+				w.queue <- buf[:n]
+				b = b[n:]
+			}
+			return l, nil
 		}
-		return l, nil
 	}
+	return 0, ErrClosed
 }
 
 // writer do the asynchronous write independently
 // Take care of reopen, I am not sure if there need no lock
 func (w *AsynchronousWriter) writer() {
 	var err error
-	var b []byte
 	w.wg.Done()
 	for {
 		select {
-		case b = <-w.queue:
+		case b := <-w.queue:
 			if _, err = w.file.Write(b); err != nil {
-				w.errChan <- err
-				_asyncBufferPool.Put(b)
-				// writer exit on error
-				return
+				select {
+				case w.errChan <- err:
+				}
 			}
 			_asyncBufferPool.Put(b)
 		case <-w.ctx:
-			// writer exit on context closed
+			// writer write the buffered bytes then exit on context closed
 			return
 		}
 	}
@@ -357,28 +353,32 @@ func (w *LockedWriter) Close() error {
 // Close lock and close the file
 func (w *AsynchronousWriter) Close() error {
 	w.once.Do(func() {
-		close(w.queue)
+		atomic.StoreInt32(&w.closed, 1)
 		close(w.ctx)
 	})
 
-	if err := w.onClose(); err != nil {
-		w.errChan <- err
-	}
+	w.onClose()
 	return w.file.Close()
 }
 
 // onClose process remaining bufferd data for asynchronous writer
-func (w *AsynchronousWriter) onClose() error {
+func (w *AsynchronousWriter) onClose() {
 	var err error
-	var b []byte
-	for b = range w.queue {
-		// flush all remaining field
-		if _, err = w.file.Write(b); err != nil {
+	for {
+		select {
+		case b := <-w.queue:
+			// flush all remaining field
+			if _, err = w.file.Write(b); err != nil {
+				select {
+				case w.errChan <- err:
+				default:
+					_asyncBufferPool.Put(b)
+					return
+				}
+			}
 			_asyncBufferPool.Put(b)
-			// writer exit on error
-			return err
+		default: // after the queue was empty, return
+			return
 		}
-		_asyncBufferPool.Put(b)
 	}
-	return nil
 }

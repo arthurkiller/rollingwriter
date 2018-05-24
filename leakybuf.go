@@ -29,10 +29,6 @@ func (lb *LeakyBuf) Get() (b []byte) {
 // size is not the same with the leaky buffer's. This is intended to expose
 // error usage of leaky buffer.
 func (lb *LeakyBuf) Put(b []byte) {
-	if len(b) != lb.bufSize {
-		// FIXME this panic maybe useful
-		panic("invalid buffer size that's put into leaky buffer")
-	}
 	select {
 	case lb.freeList <- b:
 	default: // LeakBuf is full, we can free this byte
