@@ -206,14 +206,13 @@ func (w *Writer) Reopen(file string) error {
 	}
 
 	// open & swap the file
-	oldfile := w.file
 	newfile, err := os.OpenFile(w.absolutePath, DefaultFileFlag, DefaultFileMode)
 	if err != nil {
 		return err
 	}
 
 	// swap the unsafe pointer
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
+	oldfile := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
 
 	// add to the delete file list
 	//FIXME if the rolling list full, here will be blocked
@@ -221,13 +220,13 @@ func (w *Writer) Reopen(file string) error {
 
 	// Do aditional jobs
 	go func() {
-		defer oldfile.Close()
+		defer (*os.File)(oldfile).Close()
 		if w.cf.Compress {
 			if err := os.Rename(file, file+".tmp"); err != nil {
 				log.Println("error in compress rename tempfile", err)
 				return
 			}
-			err = w.CompressFile(oldfile, file)
+			err = w.CompressFile((*os.File)(oldfile), file)
 			if err != nil {
 				log.Println("error in compress log file", err)
 				return
