@@ -48,7 +48,11 @@ type BufferWriter struct {
 }
 
 // buffer pool for asynchronous writer
-var _asyncBufferPool = NewLeakyBuf(BufferLen, BufferSize)
+var _asyncBufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, BufferSize)
+	},
+}
 
 // NewWriterFromConfig generate the rollingWriter with given config
 func NewWriterFromConfig(c *Config) (RollingWriter, error) {
@@ -291,7 +295,7 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 
 			l := len(b)
 			for len(b) > 0 {
-				buf := _asyncBufferPool.Get()
+				buf := _asyncBufferPool.Get().([]byte)
 				n := copy(buf, b)
 				w.queue <- buf[:n]
 				b = b[n:]
@@ -299,7 +303,7 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 			return l, nil
 		default:
 			// here we need to block while the channel is full
-			w.queue <- append(_asyncBufferPool.Get()[0:], b...)[:len(b)]
+			w.queue <- append(_asyncBufferPool.Get().([]byte)[0:], b...)[:len(b)]
 			return len(b), nil
 		}
 	}
