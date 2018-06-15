@@ -3,7 +3,6 @@ dist: trusty
 sudo: false
 
 go:
- - 1.8
  - 1.9
 
 env:
