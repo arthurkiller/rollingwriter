@@ -25,7 +25,7 @@ before_install:
  - go get -t -v ./packets/...
 
 script:
- - go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+ - go test -race -coverprofile=coverage.txt -covermode=atomic
 
 after_success:
  - bash <(curl -s https://codecov.io/bash)
