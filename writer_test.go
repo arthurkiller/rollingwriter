@@ -49,7 +49,7 @@ func newBufferWriter() *BufferWriter {
 
 func TestWrite(t *testing.T) {
 	var writer io.WriteCloser
-	var c int = 10000
+	var c int = 1000
 	var l int = 1024
 	wg := sync.WaitGroup{}
 
