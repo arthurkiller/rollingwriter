@@ -1,5 +1,7 @@
 # RollingWriter [![Build Status](https://travis-ci.org/arthurkiller/rollingWriter.svg?branch=master)](https://travis-ci.org/arthurkiller/rollingWriter) [![Go Report Card](https://goreportcard.com/badge/github.com/arthurkiller/rollingwriter)](https://goreportcard.com/report/github.com/arthurkiller/rollingwriter) [![GoDoc](https://godoc.org/github.com/arthurkiller/rollingWriter?status.svg)](https://godoc.org/github.com/arthurkiller/rollingWriter)
-Rolling file IO writer is write in go. Easy to ID nonlock rollig writer
+RollingWriter is an auto rotate io.Writer implementation. It always works with logger.
+
+__New Version v2.0 is comeing out! Much more Powerfull and Efficient. Try it by follow the demo__
 
 it contains 2 separate patrs:
 * Manager: decide when to rotate the file with policy
@@ -12,8 +14,6 @@ it contains 2 separate patrs:
     * Writer: not parallel safe writer
     * LockedWriter: parallel safe garented by lock
     * AsyncWtiter: parallel safe async writer
-
-__New Version v2.0 is comeing out! Much more Powerfull and Efficient. Try it by follow the demo__
 
 ## Features
 * Auto rotate
