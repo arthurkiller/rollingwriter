@@ -103,7 +103,7 @@ func (m *manager) ParseVolume(c *Config) {
 	var (
 		p       int
 		unit    int64 = 1
-		unitstr       = "GB"
+		unitstr string
 	)
 
 	if s[len(s)-1] == 'B' {
@@ -115,6 +115,8 @@ func (m *manager) ParseVolume(c *Config) {
 	}
 
 	switch unitstr {
+	default:
+		fallthrough
 	case "G", "GB":
 		unit *= 1024
 		fallthrough
