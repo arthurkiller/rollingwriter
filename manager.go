@@ -20,6 +20,7 @@ type manager struct {
 	wg            sync.WaitGroup
 }
 
+// NewManager generate the Manager with config
 func NewManager(c *Config) (Manager, error) {
 	m := &manager{
 		startAt: time.Now(),
@@ -98,19 +99,16 @@ func (m *manager) ParseVolume(c *Config) {
 	}
 
 	var (
-		tp      int
-		p       int64  = 0
+		p       int
 		unit    int64  = 1
 		unitstr string = "GB"
 	)
 
 	if s[len(s)-1] == 'B' {
-		tp, _ = strconv.Atoi(string(s[:len(s)-2]))
-		p = int64(tp)
+		p, _ = strconv.Atoi(string(s[:len(s)-2]))
 		unitstr = string(s[len(s)-2:])
 	} else {
-		tp, _ = strconv.Atoi(string(s[:len(s)-1]))
-		p = int64(tp)
+		p, _ = strconv.Atoi(string(s[:len(s)-1]))
 		unitstr = string(s[len(s)-1])
 	}
 
@@ -124,7 +122,7 @@ func (m *manager) ParseVolume(c *Config) {
 	case "K", "KB":
 		unit *= 1024
 	}
-	m.thresholdSize = p * unit
+	m.thresholdSize = int64(p) * unit
 }
 
 // GenLogFileName will return the file name for rename

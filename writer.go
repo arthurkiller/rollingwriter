@@ -125,7 +125,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	return writer, nil
 }
 
-// NewWriterFromConfig generate the rollingWriter with given option
+// NewWriter generate the rollingWriter with given option
 func NewWriter(ops ...Option) (RollingWriter, error) {
 	cfg := NewDefaultConfig()
 	for _, opt := range ops {
@@ -134,7 +134,7 @@ func NewWriter(ops ...Option) (RollingWriter, error) {
 	return NewWriterFromConfig(&cfg)
 }
 
-// NewWriterFromConfig generate the rollingWriter with given config file
+// NewWriterFromConfigFile generate the rollingWriter with given config file
 func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -197,8 +197,7 @@ func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
 	return nil, ErrInvalidArgument
 }
 
-// func (w *LockedWriter) Reopen(file string) error {
-// func (w *AsynchronousWriter) Reopen(file string) error {
+// Reopen do the rotate, open new file and swap FD then trate the old FD
 func (w *Writer) Reopen(file string) error {
 	// do the rename
 	if err := os.Rename(w.absolutePath, file); err != nil {

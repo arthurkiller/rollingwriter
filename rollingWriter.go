@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// RollingPolicies giveout 3 policy for rolling.
 const (
 	WithoutRolling = iota
 	TimeRolling
@@ -86,9 +87,9 @@ type Config struct {
 
 	// Compress will compress log file with gzip
 	Compress bool `json:"compress"`
-	// Asynchronous enable the asychronous write
+	// Asynchronous enable the asynchronous write
 	// by default the writer will be synchronous
-	Asynchronous bool `json:"asychronous"`
+	Asynchronous bool `json:"asynchronous"`
 	// Lock enable the lock for writer, the writer will guarantee parallel safity
 	// NOTICE: this will take effect only when writer is synchronous
 	Lock bool `json:"lock"`
