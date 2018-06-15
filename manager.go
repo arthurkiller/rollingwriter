@@ -40,9 +40,11 @@ func NewManager(c *Config) (Manager, error) {
 		return nil, nil
 	case TimeRolling:
 		// regist the tigger and start cron
-		m.cr.AddFunc(c.RollingTimePattern, func() {
+		if err := m.cr.AddFunc(c.RollingTimePattern, func() {
 			m.fire <- m.GenLogFileName(c)
-		})
+		}); err != nil {
+			return nil, err
+		}
 		m.cr.Start()
 	case VolumeRolling:
 		// regist the tigger and start goroutine
@@ -100,8 +102,8 @@ func (m *manager) ParseVolume(c *Config) {
 
 	var (
 		p       int
-		unit    int64  = 1
-		unitstr string = "GB"
+		unit    int64 = 1
+		unitstr       = "GB"
 	)
 
 	if s[len(s)-1] == 'B' {

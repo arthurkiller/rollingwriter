@@ -58,8 +58,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	}
 
 	// make dir for path if not exist
-	err := os.MkdirAll(c.LogPath, 0755)
-	if err != nil {
+	if err := os.MkdirAll(c.LogPath, 0700); err != nil {
 		return nil, err
 	}
 
@@ -181,8 +180,8 @@ func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 		return err
 	}
 	if _, err := io.Copy(gw, oldfile); err != nil {
-		if err := os.Remove(cmpname); err != nil {
-			return err
+		if errR := os.Remove(cmpname); err != nil {
+			return errR
 		}
 		return err
 	}
@@ -225,8 +224,7 @@ func (w *Writer) Reopen(file string) error {
 				log.Println("error in compress rename tempfile", err)
 				return
 			}
-			err = w.CompressFile((*os.File)(oldfile), file)
-			if err != nil {
+			if err := w.CompressFile((*os.File)(oldfile), file); err != nil {
 				log.Println("error in compress log file", err)
 				return
 			}
@@ -317,9 +315,7 @@ func (w *AsynchronousWriter) writer() {
 		select {
 		case b := <-w.queue:
 			if _, err = w.file.Write(b); err != nil {
-				select {
-				case w.errChan <- err:
-				}
+				w.errChan <- err
 			}
 			_asyncBufferPool.Put(b)
 		case <-w.ctx:
