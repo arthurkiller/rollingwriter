@@ -3,6 +3,7 @@ package rollingwriter
 import (
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -164,6 +165,7 @@ func (w *Writer) AutoRemove() {
 		go func() {
 			file := <-w.rollingfilelist
 			if err := os.Remove(file); err != nil {
+				fmt.Println("DBG in remove file", file, len(w.rollingfilelist))
 				log.Println("error in auto remove log file", err)
 			}
 		}()
@@ -172,6 +174,7 @@ func (w *Writer) AutoRemove() {
 
 // CompressFile compress log file write into .gz and remove source file
 func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
+	fmt.Println("DBG compress file open", cmpname)
 	cmpfile, err := os.OpenFile(cmpname, DefaultFileFlag, DefaultFileMode)
 	defer cmpfile.Close()
 	if err != nil {
@@ -184,11 +187,13 @@ func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 		return err
 	}
 	if _, err := io.Copy(gw, oldfile); err != nil {
+		fmt.Println("DBG compress old file remove", cmpname)
 		if errR := os.Remove(cmpname); err != nil {
 			return errR
 		}
 		return err
 	}
+	fmt.Println("DBG compress remove file")
 	return os.Remove(cmpname + ".tmp") //remove *.log.tmp file
 }
 
@@ -203,15 +208,18 @@ func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
 // Reopen do the rotate, open new file and swap FD then trate the old FD
 func (w *Writer) Reopen(file string) error {
 	// do the rename
+	fmt.Println("DBG fire call reopen", file)
 	if err := os.Rename(w.absolutePath, file); err != nil {
 		return err
 	}
+	fmt.Println("DBG rename", w.absolutePath, "to", file)
 
 	// open & swap the file
 	newfile, err := os.OpenFile(w.absolutePath, DefaultFileFlag, DefaultFileMode)
 	if err != nil {
 		return err
 	}
+	fmt.Println("DBG reopen new file", w.absolutePath)
 
 	// swap the unsafe pointer
 	oldfile := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
@@ -224,6 +232,7 @@ func (w *Writer) Reopen(file string) error {
 	go func() {
 		defer (*os.File)(oldfile).Close()
 		if w.cf.Compress {
+			fmt.Println("DBG on compress rename", file, "to", file+".tmp")
 			if err := os.Rename(file, file+".tmp"); err != nil {
 				log.Println("error in compress rename tempfile", err)
 				return
