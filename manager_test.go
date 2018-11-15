@@ -45,6 +45,15 @@ func TestParseVolume(t *testing.T) {
 	c.RollingVolumeSize = "1g"
 	m.ParseVolume(c)
 	assert.Equal(t, int64(1024*1024*1024), m.thresholdSize)
+	c.RollingVolumeSize = "1tb"
+	m.ParseVolume(c)
+	assert.Equal(t, int64(1024*1024*1024*1024), m.thresholdSize)
+	c.RollingVolumeSize = "1tB"
+	m.ParseVolume(c)
+	assert.Equal(t, int64(1024*1024*1024*1024), m.thresholdSize)
+	c.RollingVolumeSize = "1t"
+	m.ParseVolume(c)
+	assert.Equal(t, int64(1024*1024*1024*1024), m.thresholdSize)
 }
 
 func TestGenLogFileName(t *testing.T) {
