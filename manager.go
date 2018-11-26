@@ -66,6 +66,7 @@ func NewManager(c *Config) (Manager, error) {
 						log.Println("error in open file", err)
 						os.Exit(-1)
 					}
+					defer file.Close()
 					if info, err := file.Stat(); err == nil {
 						if info.Size() > m.thresholdSize {
 							m.fire <- m.GenLogFileName(c)

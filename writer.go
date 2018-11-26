@@ -75,7 +75,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 
 	filel := make([]string, 0, 7)
 	if c.MaxRemain > 0 {
-		filel = make([]string, c.MaxRemain*7)
+		filel = make([]string, 0, c.MaxRemain+1)
 	}
 
 	// Start the Manager
