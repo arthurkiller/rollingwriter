@@ -4,7 +4,6 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"sync"
 	"testing"
 )
 
@@ -17,8 +16,7 @@ func newWriter() *Writer {
 	cfg := NewDefaultConfig()
 	cfg.LogPath = "./test"
 	cfg.FileName = "unittest"
-	cfg.Asynchronous = false
-	cfg.Lock = false
+	cfg.WriterMode = "none"
 	w, _ := NewWriterFromConfig(&cfg)
 	return w.(*Writer)
 }
@@ -27,8 +25,7 @@ func newLockedWriter() *LockedWriter {
 	cfg := NewDefaultConfig()
 	cfg.LogPath = "./test"
 	cfg.FileName = "unittest"
-	cfg.Asynchronous = false
-	cfg.Lock = true
+	cfg.WriterMode = "lock"
 	w, _ := NewWriterFromConfig(&cfg)
 	return w.(*LockedWriter)
 }
@@ -37,80 +34,154 @@ func newAsynWriter() *AsynchronousWriter {
 	cfg := NewDefaultConfig()
 	cfg.LogPath = "./test"
 	cfg.FileName = "unittest"
-	cfg.Asynchronous = true
+	cfg.WriterMode = "async"
 	w, _ := NewWriterFromConfig(&cfg)
 	return w.(*AsynchronousWriter)
 }
 
-// TODO
 func newBufferWriter() *BufferWriter {
-	return &BufferWriter{}
+	cfg := NewDefaultConfig()
+	cfg.LogPath = "./test"
+	cfg.FileName = "unittest"
+	cfg.WriterMode = "buffer"
+	w, _ := NewWriterFromConfig(&cfg)
+	return w.(*BufferWriter)
 }
 
 func TestWrite(t *testing.T) {
 	var writer io.WriteCloser
 	var c int = 1000
 	var l int = 1024
-	wg := sync.WaitGroup{}
 
 	writer = newWriter()
 	bf := make([]byte, l)
 	rand.Read(bf)
 	writer.Write(bf)
-	//for i := 0; i < c; i++ {
-	//	wg.Add(1)
-	//	bf := make([]byte, l)
-	//	rand.Read(bf)
-	//	go func() {
-	//		writer.Write(bf)
-	//		defer wg.Done()
-	//	}()
-	//}
-	//wg.Wait()
+	for i := 0; i < c; i++ {
+		bf := make([]byte, l)
+		rand.Read(bf)
+		writer.Write(bf)
+	}
 	writer.Close()
 	clean()
 
 	writer = newLockedWriter()
 	for i := 0; i < c; i++ {
-		wg.Add(1)
 		bf := make([]byte, l)
 		rand.Read(bf)
-		go func() {
-			writer.Write(bf)
-			defer wg.Done()
-		}()
+		writer.Write(bf)
 	}
-	wg.Wait()
 	writer.Close()
 	clean()
 
 	writer = newAsynWriter()
 	for i := 0; i < c; i++ {
-		wg.Add(1)
 		bf := make([]byte, l)
 		rand.Read(bf)
-		go func() {
-			writer.Write(bf)
-			defer wg.Done()
-		}()
+		writer.Write(bf)
 	}
-	wg.Wait()
 	writer.Close()
 	clean()
 
-	// TODO
-	//writer = newBufferWriter()
-	//for i := 0; i < c; i++ {
-	//	wg.Add(1)
-	//	bf := make([]byte, l)
-	//	rand.Read(bf)
-	//	go func() {
-	//		writer.Write(bf)
-	//		defer wg.Done()
-	//	}()
-	//}
-	//wg.Wait()
+	writer = newBufferWriter()
+	for i := 0; i < c; i++ {
+		bf := make([]byte, l)
+		rand.Read(bf)
+		writer.Write(bf)
+	}
+	writer.Close()
+	clean()
+}
+
+func TestWriteParallel(t *testing.T) {
+	var writer io.WriteCloser
+	var c int = 1000
+	var l int = 1024
+
+	t.Run("none", func(t *testing.T) {
+		t.Parallel()
+		writer = newWriter()
+		bf := make([]byte, l)
+		rand.Read(bf)
+		writer.Write(bf)
+		for i := 0; i < c; i++ {
+			bf := make([]byte, l)
+			rand.Read(bf)
+			writer.Write(bf)
+		}
+		writer.Close()
+		clean()
+	})
+}
+func TestWriteLockParallel(t *testing.T) {
+	var writer io.WriteCloser
+	var c int = 1000
+	var l int = 1024
+
+	t.Run("locked", func(t *testing.T) {
+		t.Parallel()
+		writer = newLockedWriter()
+		for i := 0; i < c; i++ {
+			bf := make([]byte, l)
+			rand.Read(bf)
+			writer.Write(bf)
+		}
+		writer.Close()
+		clean()
+	})
+
+}
+
+func TestWriteAsyncParallel(t *testing.T) {
+	var writer io.WriteCloser
+	var c int = 1000
+	var l int = 1024
+
+	t.Run("async", func(t *testing.T) {
+		t.Parallel()
+		writer = newAsynWriter()
+		for i := 0; i < c; i++ {
+			bf := make([]byte, l)
+			rand.Read(bf)
+			writer.Write(bf)
+		}
+		writer.Close()
+		clean()
+	})
+}
+
+func TestWriteBufferParallel(t *testing.T) {
+	var writer io.WriteCloser
+	var c int = 1000
+	var l int = 1024
+
+	t.Run("buffer", func(t *testing.T) {
+		t.Parallel()
+		writer = newBufferWriter()
+		for i := 0; i < c; i++ {
+			bf := make([]byte, l)
+			rand.Read(bf)
+			writer.Write(bf)
+		}
+		writer.Close()
+		clean()
+	})
 }
 
 func TestReopen(t *testing.T) {
+	var c int = 1000
+	var l int = 1024
+
+	t.Run("none", func(t *testing.T) {
+		t.Parallel()
+		writer := newWriter()
+		for i := 0; i < c; i++ {
+			bf := make([]byte, l)
+			rand.Read(bf)
+			writer.Write(bf)
+		}
+		writer.Reopen("./test/unittest.reopen")
+		writer.Close()
+		clean()
+	})
 }

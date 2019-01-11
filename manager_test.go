@@ -1,6 +1,7 @@
 package rollingwriter
 
 import (
+	"path"
 	"testing"
 	"time"
 
@@ -67,10 +68,10 @@ func TestGenLogFileName(t *testing.T) {
 
 	dest := m.GenLogFileName(c)
 	timetag := m.startAt.Format(c.TimeTagFormat)
-	assert.Equal(t, "./file"+".log."+timetag, dest)
+	assert.Equal(t, path.Join("./", "file"+".log."+timetag), dest)
 
 	c.Compress = true
 	dest = m.GenLogFileName(c)
 	timetag = m.startAt.Format(c.TimeTagFormat)
-	assert.Equal(t, "./file"+".log.gz."+timetag, dest)
+	assert.Equal(t, path.Join("./", "file"+".log.gz."+timetag), dest)
 }

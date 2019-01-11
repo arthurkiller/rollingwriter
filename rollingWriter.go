@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strings"
+	"path"
 )
 
 // RollingPolicies giveout 3 policy for rolling.
@@ -22,7 +22,7 @@ var (
 	// Precision defined the precision about the reopen operation condition
 	// check duration within second
 	Precision = 1
-	// DefaultFileMode set the default open mode
+	// DefaultFileMode set the default open mode rw-r--r-- by default
 	DefaultFileMode = os.FileMode(0644)
 	// DefaultFileFlag set the default file flag
 	DefaultFileFlag = os.O_RDWR | os.O_CREATE | os.O_APPEND
@@ -66,7 +66,7 @@ type Config struct {
 	//	[LogPath]/[FileName].log.gz.[TimeTag]
 	//
 	// NOTICE: blank field will be ignored
-	// By default I use '-' as separator, you can set it yourself
+	// By default we using '-' as separator, you can set it yourself
 	TimeTagFormat string `json:"time_tag_format"`
 	LogPath       string `json:"log_path"`
 	FileName      string `json:"file_name"`
@@ -83,37 +83,36 @@ type Config struct {
 	RollingTimePattern string `json:"rolling_time_pattern"`
 	RollingVolumeSize  string `json:"rolling_volume_size"`
 
+	// WriterMode in 4 modes below
+	// 1. none 2. lock
+	// 3. async 4. buffer
+	WriterMode string `json:"writer_mode"`
+	// BufferWriterThershould in MB
+	BufferWriterThershould int `json:"buffer_thershould"`
 	// Compress will compress log file with gzip
 	Compress bool `json:"compress"`
-	// Asynchronous enable the asynchronous write
-	// by default the writer will be synchronous
-	Asynchronous bool `json:"asynchronous"`
-	// Lock enable the lock for writer, the writer will guarantee parallel safity
-	// NOTICE: this will take effect only when writer is synchronous
-	Lock bool `json:"lock"`
 }
 
 // NewDefaultConfig return the default config
 func NewDefaultConfig() Config {
 	return Config{
-		LogPath:            "./log",
-		TimeTagFormat:      "200601021504",
-		FileName:           "log",
-		MaxRemain:          -1,            // disable auto delete
-		RollingPolicy:      1,             // TimeRotate by default
-		RollingTimePattern: "0 0 0 * * *", // Rolling at 00:00 AM everyday
-		RollingVolumeSize:  "1G",
-		Compress:           false,
-		Asynchronous:       false,
-		Lock:               false,
+		LogPath:                "./log",
+		TimeTagFormat:          "200601021504",
+		FileName:               "log",
+		MaxRemain:              -1,            // disable auto delete
+		RollingPolicy:          1,             // TimeRotate by default
+		RollingTimePattern:     "0 0 0 * * *", // Rolling at 00:00 AM everyday
+		RollingVolumeSize:      "1G",
+		WriterMode:             "lock",
+		BufferWriterThershould: 64,
+		Compress:               false,
 	}
 }
 
 // LogFilePath return the absolute path on log file
-func LogFilePath(c *Config) string {
-	var filepath string
-	filepath = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log"
-	return filepath
+func LogFilePath(c *Config) (filepath string) {
+	filepath = path.Join(c.LogPath, c.FileName) + ".log"
+	return
 }
 
 // Option defined config option
@@ -144,7 +143,7 @@ func WithFileName(name string) Option {
 // WithAsynchronous enable the asynchronous write for writer
 func WithAsynchronous() Option {
 	return func(p *Config) {
-		p.Asynchronous = true
+		p.WriterMode = "async"
 	}
 }
 
@@ -152,7 +151,21 @@ func WithAsynchronous() Option {
 // Writer will call write with the Lock to guarantee the parallel safe
 func WithLock() Option {
 	return func(p *Config) {
-		p.Lock = true
+		p.WriterMode = "lock"
+	}
+}
+
+// WithBuffer will enable the buffer writer mode
+func WithBuffer() Option {
+	return func(p *Config) {
+		p.WriterMode = "buffer"
+	}
+}
+
+// WithBufferThershould set buffer write thershould
+func WithBufferThershould(n int) Option {
+	return func(p *Config) {
+		p.BufferWriterThershould = n
 	}
 }
 
@@ -171,17 +184,11 @@ func WithMaxRemain(max int) Option {
 	}
 }
 
-// WithRollingPolicy set the rolling policy
-func WithRollingPolicy(policy int) Option {
-	return func(p *Config) {
-		p.RollingPolicy = policy
-	}
-}
-
 // WithRollingTimePattern set the time rolling policy time pattern obey the Corn table style
 // visit http://crontab.org/ for details
 func WithRollingTimePattern(pattern string) Option {
 	return func(p *Config) {
+		p.RollingPolicy = 2
 		p.RollingTimePattern = pattern
 	}
 }
@@ -189,6 +196,7 @@ func WithRollingTimePattern(pattern string) Option {
 // WithRollingVolumeSize set the rolling file truncation threshold size
 func WithRollingVolumeSize(size string) Option {
 	return func(p *Config) {
+		p.RollingPolicy = 3
 		p.RollingVolumeSize = size
 	}
 }

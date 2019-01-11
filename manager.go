@@ -3,6 +3,7 @@ package rollingwriter
 import (
 	"log"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,11 +36,8 @@ func NewManager(c *Config) (Manager, error) {
 	default:
 		fallthrough
 	case WithoutRolling:
-		// default policy
-		// Do Nothing
 		return nil, nil
 	case TimeRolling:
-		// regist the tigger and start cron
 		if err := m.cr.AddFunc(c.RollingTimePattern, func() {
 			m.fire <- m.GenLogFileName(c)
 		}); err != nil {
@@ -47,30 +45,32 @@ func NewManager(c *Config) (Manager, error) {
 		}
 		m.cr.Start()
 	case VolumeRolling:
-		// regist the tigger and start goroutine
 		m.ParseVolume(c)
 		m.wg.Add(1)
 		go func() {
 			timer := time.Tick(time.Duration(Precision) * time.Second)
 			filepath := LogFilePath(c)
+			var file *os.File
+			var err error
+			if file, err = os.Open(filepath); err != nil {
+				log.Println("error in open file", err)
+				os.Exit(-1)
+			}
 			m.wg.Done()
 			for {
 				select {
 				case <-m.context:
-					// on close, exit
 					return
 				case <-timer:
-					file, err := os.Open(filepath)
-					if err != nil {
-						// SHOULD NOT HAPPEN
-						log.Println("error in open file", err)
-						os.Exit(-1)
-					}
-					defer file.Close()
 					if info, err := file.Stat(); err == nil {
 						if info.Size() > m.thresholdSize {
+							if file, err = os.Open(filepath); err != nil {
+								log.Println("error in open file", err)
+							}
 							m.fire <- m.GenLogFileName(c)
 						}
+					} else {
+						log.Println("error in call file stat", err)
 					}
 				}
 			}
@@ -129,15 +129,13 @@ func (m *manager) ParseVolume(c *Config) {
 	m.thresholdSize = int64(p) * unit
 }
 
-// GenLogFileName will return the file name for rename
-// filename should be absolute path
-func (m *manager) GenLogFileName(c *Config) (file string) {
-	// /path-to-log/filename.log.2007010215041517
-	// TODO TimeTagFormat should change with the rolling strategy
+// GenLogFileName generate the new log file name, filename should be absolute path
+func (m *manager) GenLogFileName(c *Config) (filename string) {
+	// [path-to-log]/filename.log.2007010215041517
 	if c.Compress {
-		file = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log.gz." + m.startAt.Format(c.TimeTagFormat)
+		filename = path.Join(c.LogPath, c.FileName+".log.gz."+m.startAt.Format(c.TimeTagFormat))
 	} else {
-		file = strings.TrimRight(c.LogPath, "/") + "/" + c.FileName + ".log." + m.startAt.Format(c.TimeTagFormat)
+		filename = path.Join(c.LogPath, c.FileName+".log."+m.startAt.Format(c.TimeTagFormat))
 	}
 	// reset the start time to now
 	m.startAt = time.Now()
