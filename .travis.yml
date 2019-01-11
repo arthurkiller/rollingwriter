@@ -4,14 +4,13 @@ sudo: false
 
 go:
  - 1.9
+ - 1.10
+ - 1.11
 
 env:
  global:
-  - GO15VENDOREXPERIMENT=1
+  - GO111MODULE=on
 matrix:
- - TARGET=amd64
- - TARGET=arm64
- - TARGET=arm
  - TARGET=x86
  - TARGET=x64
 
@@ -21,7 +20,7 @@ matrix:
   - go: tip
 
 before_install:
- - env GO111MODULE=on go mod vendor
+ - go mod vendor
 
 script:
  - go test -race -coverprofile=coverage.txt -covermode=atomic
