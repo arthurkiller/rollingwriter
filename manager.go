@@ -36,7 +36,7 @@ func NewManager(c *Config) (Manager, error) {
 	default:
 		fallthrough
 	case WithoutRolling:
-		return nil, nil
+		return m, nil
 	case TimeRolling:
 		if err := m.cr.AddFunc(c.RollingTimePattern, func() {
 			m.fire <- m.GenLogFileName(c)
@@ -81,7 +81,9 @@ func NewManager(c *Config) (Manager, error) {
 }
 
 // Fire return the fire channel
-func (m *manager) Fire() chan string { return m.fire }
+func (m *manager) Fire() chan string {
+	return m.fire
+}
 
 // Close return stop the manager and return
 func (m *manager) Close() {

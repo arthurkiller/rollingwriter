@@ -1,7 +1,6 @@
 package rollingwriter
 
 import (
-	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
@@ -43,7 +42,9 @@ type AsynchronousWriter struct {
 // BufferWriter merge some write operations into one.
 type BufferWriter struct {
 	Writer
-	buf *bytes.Buffer
+	buf     *[]byte
+	n       int64
+	swaping int32
 }
 
 // buffer pool for asynchronous writer
@@ -82,6 +83,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var writer RollingWriter
 	switch c.WriterMode {
 	case "none":
@@ -123,9 +125,8 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		wr.wg.Wait()
 		writer = wr
 	case "buffer":
-		// bufferWriterThershould unit is MB
-		c.BufferWriterThershould = c.BufferWriterThershould * 1024 * 1024
-		b := make([]byte, c.BufferWriterThershould*2)
+		// bufferWriterThershould unit is B
+		bf := make([]byte, 0, c.BufferWriterThershould*10)
 		writer = &BufferWriter{
 			Writer: Writer{
 				file:            file,
@@ -134,7 +135,8 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 				cf:              c,
 				rollingfilelist: filel,
 			},
-			buf: bytes.NewBuffer(b),
+			buf:     &bf,
+			swaping: 0,
 		}
 	default:
 		return nil, ErrInvalidArgument
@@ -319,14 +321,20 @@ func (w *AsynchronousWriter) writer() {
 }
 
 func (w *BufferWriter) Write(b []byte) (int, error) {
-	var err error
-	if _, err = w.buf.Write(b); err != nil {
-		return 0, err
-	}
-	if w.buf.Len() > w.cf.BufferWriterThershould {
-		if _, err = w.buf.WriteTo(w.file); err != nil {
+	select {
+	case filename := <-w.fire:
+		if err := w.Reopen(filename); err != nil {
 			return 0, err
 		}
+	default:
+	}
+	buf := append(*w.buf, b...)
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer)(&buf))
+	if len(*w.buf) > w.cf.BufferWriterThershould && atomic.CompareAndSwapInt32(&w.swaping, 0, 1) {
+		nb := make([]byte, 0, w.cf.BufferWriterThershould*10)
+		ob := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer(&nb)))
+		w.file.Write(*(*[]byte)(ob))
+		atomic.StoreInt32(&w.swaping, 0)
 	}
 	return len(b), nil
 }
@@ -378,8 +386,6 @@ func (w *AsynchronousWriter) onClose() {
 
 // Close bufferWriter flush all buffered write then close file
 func (w *BufferWriter) Close() error {
-	if _, err := w.buf.WriteTo(w.file); err != nil {
-		return err
-	}
+	w.file.Write(*w.buf)
 	return w.file.Close()
 }
