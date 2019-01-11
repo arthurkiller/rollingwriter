@@ -21,7 +21,7 @@ matrix:
   - go: tip
 
 before_install:
- - go get -t -v ./packets/...
+ - env GO111MODULE=on go mod vendor
 
 script:
  - go test -race -coverprofile=coverage.txt -covermode=atomic
