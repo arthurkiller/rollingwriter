@@ -9,12 +9,6 @@ go:
 env:
  global:
   - GO111MODULE=on
-matrix:
- - TARGET=x86
- - TARGET=x64
- fast_finish: true
- allow_failures:
-  - go: tip
 
 before_install:
  - go mod vendor
