@@ -27,16 +27,16 @@ it contains 2 separate patrs:
 goos: darwin
 goarch: amd64
 pkg: github.com/arthurkiller/rollingWriter
-BenchmarkWrite-4                          200000              6286 ns/op               0 B/op          0 allocs/op
-BenchmarkParallelWrite-4                  200000              7799 ns/op               0 B/op          0 allocs/op
-BenchmarkAsynWrite-4                      200000             10146 ns/op           22659 B/op          1 allocs/op
-BenchmarkParallelAsynWrite-4              200000              8713 ns/op           12749 B/op          1 allocs/op
-BenchmarkLockedWrite-4                    200000              5984 ns/op               0 B/op          0 allocs/op
-BenchmarkParallelLockedWrite-4            200000              7220 ns/op               0 B/op          0 allocs/op
-BenchmarkBufferWrite-4                   1000000              1147 ns/op             402 B/op          0 allocs/op
-BenchmarkParallelBufferWrite-4           1000000              1295 ns/op            1207 B/op          0 allocs/op
+BenchmarkWrite-4                          300000              5952 ns/op               0 B/op          0 allocs/op
+BenchmarkParallelWrite-4                  200000              7846 ns/op               0 B/op          0 allocs/op
+BenchmarkAsynWrite-4                      200000              7917 ns/op           16324 B/op          1 allocs/op
+BenchmarkParallelAsynWrite-4              200000              8632 ns/op           12513 B/op          1 allocs/op
+BenchmarkLockedWrite-4                    200000              5829 ns/op               0 B/op          0 allocs/op
+BenchmarkParallelLockedWrite-4            200000              7796 ns/op               0 B/op          0 allocs/op
+BenchmarkBufferWrite-4                    200000              6943 ns/op            1984 B/op          4 allocs/op
+BenchmarkParallelBufferWrite-4           1000000              1026 ns/op            7129 B/op          1 allocs/op
 PASS
-ok      github.com/arthurkiller/rollingWriter   24.883s
+ok      github.com/arthurkiller/rollingWriter   14.867s
 ```
 
 ## Quick Start
