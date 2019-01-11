@@ -17,12 +17,9 @@ it contains 2 separate patrs:
     * BufferWriter: merge serval write into one `file.Write()`
 
 ## Features
-* Auto rotate
-* Parallel safe writer
-* Implement go io.Writer
-* Time rotate with corn style task schedual
-* Volume rotate
-* Max remain rolling files with auto clean
+* Auto rotate with multi rotate policies
+* Implement go io.Writer, provide parallel safe writer
+* Max remain rolling files with auto cleanup
 * Multi writer mode
 
 ## Benchmark
