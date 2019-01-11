@@ -376,6 +376,7 @@ func (w *AsynchronousWriter) onClose() {
 	}
 }
 
+// Close bufferWriter flush all buffered write then close file
 func (w *BufferWriter) Close() error {
 	if _, err := w.buf.WriteTo(w.file); err != nil {
 		return err
