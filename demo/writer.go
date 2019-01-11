@@ -20,9 +20,9 @@ func main() {
 		// 目前有2中滚动策略: 按照时间滚动按照大小滚动
 		// - 时间滚动: 配置策略如同 crontable, 例如,每天0:0切分, 则配置 0 0 0 * * *
 		// - 大小滚动: 配置单个日志文件(未压缩)的滚动大小门限, 入1G, 500M
-		RollingPolicy:      rollingwriter.VolumeRolling, //配置滚动策略 norolling timerolling volumerolling
-		RollingTimePattern: "* * * * * *",               //配置时间滚动策略
-		RollingVolumeSize:  "2k",                        //配置截断文件下限大小
+		RollingPolicy:      rollingwriter.TimeRolling, //配置滚动策略 norolling timerolling volumerolling
+		RollingTimePattern: "* * * * * *",             //配置时间滚动策略
+		RollingVolumeSize:  "2k",                      //配置截断文件下限大小
 
 		// writer 支持4种不同的 mode:
 		// 1. none 2. lock
@@ -31,8 +31,8 @@ func main() {
 		// - lock 保护的 writer: 提供由 mutex 保护的并发安全保障
 		// - 异步 writer: 异步 write, 并发安全. 异步开启后忽略 Lock 选项
 		WriterMode: "lock",
-		// BufferWriterThershould in MB
-		BufferWriterThershould: 4,
+		// BufferWriterThershould in B
+		BufferWriterThershould: 8 * 1024 * 1024,
 		// Compress will compress log file with gzip
 		Compress: true,
 	}
@@ -46,13 +46,11 @@ func main() {
 
 	// 并发读写即可
 	wg := sync.WaitGroup{}
-	bf := make([]byte, 128)
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			for {
 				fmt.Fprintf(writer, "now :%s \n", time.Now())
-				writer.Write(bf)
 			}
 		}()
 	}
