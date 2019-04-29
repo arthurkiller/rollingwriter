@@ -61,6 +61,12 @@ func newBufferWriter() *BufferWriter {
 	return w.(*BufferWriter)
 }
 
+func TestNewWriter(t *testing.T) {
+	if _, err := NewWriter(WithRollingVolumeSize("1mb")); err != nil {
+		t.Fatal("error in test new writer", err)
+	}
+}
+
 func TestWrite(t *testing.T) {
 	var writer io.WriteCloser
 	var c int = 1000
