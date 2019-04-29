@@ -238,7 +238,6 @@ func TestAutoRemove(t *testing.T) {
 	}
 	writer.Close()
 	writer.cf.MaxRemain = 0
-	writer.AutoRemove()
 	clean()
 }
 
