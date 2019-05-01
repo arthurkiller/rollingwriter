@@ -25,12 +25,10 @@ func main() {
 		RollingVolumeSize:  "2k",                      //配置截断文件下限大小
 
 		// writer 支持4种不同的 mode:
-		// 1. none 2. lock
-		// 3. async 4. buffer
-		// - 无保护的 writer: 不提供并发安全保障
-		// - lock 保护的 writer: 提供由 mutex 保护的并发安全保障
+		// 1. none 2. async 3. buffer
 		// - 异步 writer: 异步 write, 并发安全. 异步开启后忽略 Lock 选项
-		WriterMode: "lock",
+		// - buffer writer: 合并数个 write 后触发一次 write
+		WriterMode: "none",
 		// BufferWriterThershould in B
 		BufferWriterThershould: 8 * 1024 * 1024,
 		// Compress will compress log file with gzip

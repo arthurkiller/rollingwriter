@@ -23,26 +23,6 @@ func newWriter() *Writer {
 	return w.(*Writer)
 }
 
-func newVolumeWriter() *Writer {
-	cfg := NewDefaultConfig()
-	cfg.RollingPolicy = 3
-	cfg.RollingVolumeSize = "1mb"
-	cfg.LogPath = "./test"
-	cfg.FileName = "unittest"
-	cfg.WriterMode = "none"
-	w, _ := NewWriterFromConfig(&cfg)
-	return w.(*Writer)
-}
-
-func newLockedWriter() *LockedWriter {
-	cfg := NewDefaultConfig()
-	cfg.LogPath = "./test"
-	cfg.FileName = "unittest"
-	cfg.WriterMode = "lock"
-	w, _ := NewWriterFromConfig(&cfg)
-	return w.(*LockedWriter)
-}
-
 func newAsynWriter() *AsynchronousWriter {
 	cfg := NewDefaultConfig()
 	cfg.LogPath = "./test"
@@ -59,6 +39,17 @@ func newBufferWriter() *BufferWriter {
 	cfg.WriterMode = "buffer"
 	w, _ := NewWriterFromConfig(&cfg)
 	return w.(*BufferWriter)
+}
+
+func newVolumeWriter() *Writer {
+	cfg := NewDefaultConfig()
+	cfg.RollingPolicy = 3
+	cfg.RollingVolumeSize = "1mb"
+	cfg.LogPath = "./test"
+	cfg.FileName = "unittest"
+	cfg.WriterMode = "none"
+	w, _ := NewWriterFromConfig(&cfg)
+	return w.(*Writer)
 }
 
 func TestNewWriter(t *testing.T) {
@@ -90,7 +81,7 @@ func TestWrite(t *testing.T) {
 	writer.Close()
 	clean()
 
-	writer = newLockedWriter()
+	writer = newWriter()
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
@@ -158,24 +149,6 @@ func TestVolumeWriteParallel(t *testing.T) {
 		writer.Close()
 		clean()
 	})
-}
-func TestWriteLockParallel(t *testing.T) {
-	var writer io.WriteCloser
-	var c int = 1000
-	var l int = 1024
-
-	t.Run("locked", func(t *testing.T) {
-		t.Parallel()
-		writer = newLockedWriter()
-		for i := 0; i < c; i++ {
-			bf := make([]byte, l)
-			rand.Read(bf)
-			writer.Write(bf)
-		}
-		writer.Close()
-		clean()
-	})
-
 }
 
 func TestWriteAsyncParallel(t *testing.T) {

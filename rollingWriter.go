@@ -83,9 +83,8 @@ type Config struct {
 	RollingTimePattern string `json:"rolling_time_pattern"`
 	RollingVolumeSize  string `json:"rolling_volume_size"`
 
-	// WriterMode in 4 modes below
-	// 1. none 2. lock
-	// 3. async 4. buffer
+	// WriterMode in 3 modes below
+	// 1. none 2. async 3. buffer
 	WriterMode string `json:"writer_mode"`
 	// BufferWriterThershould in MB
 	BufferWriterThershould int `json:"buffer_thershould"`
@@ -103,7 +102,7 @@ func NewDefaultConfig() Config {
 		RollingPolicy:          1,             // TimeRotate by default
 		RollingTimePattern:     "0 0 0 * * *", // Rolling at 00:00 AM everyday
 		RollingVolumeSize:      "1G",
-		WriterMode:             "lock",
+		WriterMode:             "none",
 		BufferWriterThershould: 64,
 		Compress:               false,
 	}
@@ -144,14 +143,6 @@ func WithFileName(name string) Option {
 func WithAsynchronous() Option {
 	return func(p *Config) {
 		p.WriterMode = "async"
-	}
-}
-
-// WithLock will enable the lock in writer
-// Writer will call write with the Lock to guarantee the parallel safe
-func WithLock() Option {
-	return func(p *Config) {
-		p.WriterMode = "lock"
 	}
 }
 

@@ -12,7 +12,6 @@ it contains 2 separate patrs:
 
 * IOWriter: impement the io.Writer and do the io write
     * Writer: not parallel safe writer
-    * LockedWriter: parallel safe garented by lock
     * AsyncWtiter: parallel safe async writer
     * BufferWriter: merge serval write into one `file.Write()`
 
@@ -27,16 +26,14 @@ it contains 2 separate patrs:
 goos: darwin
 goarch: amd64
 pkg: github.com/arthurkiller/rollingWriter
-BenchmarkWrite-4                          300000              5952 ns/op               0 B/op          0 allocs/op
-BenchmarkParallelWrite-4                  200000              7846 ns/op               0 B/op          0 allocs/op
-BenchmarkAsynWrite-4                      200000              7917 ns/op           16324 B/op          1 allocs/op
-BenchmarkParallelAsynWrite-4              200000              8632 ns/op           12513 B/op          1 allocs/op
-BenchmarkLockedWrite-4                    200000              5829 ns/op               0 B/op          0 allocs/op
-BenchmarkParallelLockedWrite-4            200000              7796 ns/op               0 B/op          0 allocs/op
-BenchmarkBufferWrite-4                    200000              6943 ns/op            1984 B/op          4 allocs/op
-BenchmarkParallelBufferWrite-4           1000000              1026 ns/op            7129 B/op          1 allocs/op
+BenchmarkWrite-4                          200000              8400 ns/op               0 B/op          0 allocs/op
+BenchmarkParallelWrite-4                  100000             12944 ns/op               0 B/op          0 allocs/op
+BenchmarkAsynWrite-4                      100000             12444 ns/op           40356 B/op          1 allocs/op
+BenchmarkParallelAsynWrite-4               10000            105036 ns/op          245173 B/op          1 allocs/op
+BenchmarkBufferWrite-4                    100000             11697 ns/op            1984 B/op          4 allocs/op
+BenchmarkParallelBufferWrite-4           1000000              1142 ns/op            7752 B/op          1 allocs/op
 PASS
-ok      github.com/arthurkiller/rollingWriter   14.867s
+ok      github.com/arthurkiller/rollingWriter   9.547s
 ```
 
 ## Quick Start
