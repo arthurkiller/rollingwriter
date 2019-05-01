@@ -19,6 +19,7 @@ type manager struct {
 	cr            *cron.Cron
 	context       chan int
 	wg            sync.WaitGroup
+	lock          sync.Mutex
 }
 
 // NewManager generate the Manager with config
@@ -133,6 +134,7 @@ func (m *manager) ParseVolume(c *Config) {
 
 // GenLogFileName generate the new log file name, filename should be absolute path
 func (m *manager) GenLogFileName(c *Config) (filename string) {
+	m.lock.Lock()
 	// [path-to-log]/filename.log.2007010215041517
 	if c.Compress {
 		filename = path.Join(c.LogPath, c.FileName+".log.gz."+m.startAt.Format(c.TimeTagFormat))
@@ -141,5 +143,6 @@ func (m *manager) GenLogFileName(c *Config) (filename string) {
 	}
 	// reset the start time to now
 	m.startAt = time.Now()
+	m.lock.Unlock()
 	return
 }
