@@ -27,6 +27,7 @@ type Writer struct {
 // write operate will be guaranteed by lock
 type LockedWriter struct {
 	Writer
+	sync.Mutex
 }
 
 // AsynchronousWriter provide a asynchronous writer with the writer to confirm the write
@@ -120,7 +121,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		wr.wg.Wait()
 		rollingWriter = wr
 	case "buffer":
-		// bufferWriterThershould unit is B
+		// bufferWriterThershould unit is Byte
 		bf := make([]byte, 0, c.BufferWriterThershould*10)
 		rollingWriter = &BufferWriter{
 			Writer:  writer,
@@ -130,7 +131,6 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	default:
 		return nil, ErrInvalidArgument
 	}
-
 	return rollingWriter, nil
 }
 
@@ -248,13 +248,15 @@ func (w *Writer) Write(b []byte) (int, error) {
 		if err := w.Reopen(filename); err != nil {
 			return 0, err
 		}
-		return w.file.Write(b)
 	default:
-		return w.file.Write(b)
 	}
+	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
+	file := (*os.File)(fp)
+	return file.Write(b)
 }
 
 func (w *LockedWriter) Write(b []byte) (n int, err error) {
+	w.Lock()
 	select {
 	case filename := <-w.fire:
 		if err := w.Reopen(filename); err != nil {
@@ -262,10 +264,8 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 		}
 	default:
 	}
-
-	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
-	file := (*os.File)(fp)
-	n, err = file.Write(b)
+	n, err = w.file.Write(b)
+	w.Unlock()
 	return
 }
 
@@ -337,14 +337,14 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 
 // Close the file and return
 func (w *Writer) Close() error {
-	return w.file.Close()
+	return (*os.File)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))).Close()
 }
 
 // Close lock and close the file
 func (w *LockedWriter) Close() error {
-	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
-	file := (*os.File)(fp)
-	return file.Close()
+	w.Lock()
+	defer w.Unlock()
+	return w.file.Close()
 }
 
 // Close set closed and close the file
