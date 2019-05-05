@@ -13,6 +13,7 @@ import (
 )
 
 // Writer provide a synchronous file writer
+// if Lock is set true, write will be guaranteed by lock
 type Writer struct {
 	file            *os.File
 	absPath         string
@@ -20,6 +21,12 @@ type Writer struct {
 	cf              *Config
 	rollingfilelist []string
 	fileCh          chan string
+}
+
+// LockedWriter provide a synchronous writer with lock
+// write operate will be guaranteed by lock
+type LockedWriter struct {
+	Writer
 }
 
 // AsynchronousWriter provide a asynchronous writer with the writer to confirm the write
@@ -94,6 +101,10 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	switch c.WriterMode {
 	case "none":
 		rollingWriter = &writer
+	case "lock":
+		rollingWriter = &LockedWriter{
+			Writer: writer,
+		}
 	case "async":
 		wr := &AsynchronousWriter{
 			ctx:     make(chan int),
@@ -237,9 +248,25 @@ func (w *Writer) Write(b []byte) (int, error) {
 		if err := w.Reopen(filename); err != nil {
 			return 0, err
 		}
+		return w.file.Write(b)
+	default:
+		return w.file.Write(b)
+	}
+}
+
+func (w *LockedWriter) Write(b []byte) (n int, err error) {
+	select {
+	case filename := <-w.fire:
+		if err := w.Reopen(filename); err != nil {
+			return 0, err
+		}
 	default:
 	}
-	return (*os.File)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))).Write(b)
+
+	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
+	file := (*os.File)(fp)
+	n, err = file.Write(b)
+	return
 }
 
 // Only when the error channel is empty, otherwise nothing will write and the last error will be return
@@ -272,6 +299,7 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 }
 
 // writer do the asynchronous write independently
+// Take care of reopen, I am not sure if there need no lock
 func (w *AsynchronousWriter) writer() {
 	var err error
 	w.wg.Done()
@@ -309,7 +337,14 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 
 // Close the file and return
 func (w *Writer) Close() error {
-	return (*os.File)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))).Close()
+	return w.file.Close()
+}
+
+// Close lock and close the file
+func (w *LockedWriter) Close() error {
+	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
+	file := (*os.File)(fp)
+	return file.Close()
 }
 
 // Close set closed and close the file
