@@ -1,6 +1,9 @@
-module github.com/arthurkiller/rollingWriter
+module github.com/arthurkiller/rollingwriter
+
+go 1.12
 
 require (
-	github.com/robfig/cron v0.0.0-20180505203441-b41be1df6967
+	github.com/arthurkiller/rollingWriter v1.0.1
+	github.com/robfig/cron v1.1.0
 	github.com/stretchr/testify v1.3.0
 )
