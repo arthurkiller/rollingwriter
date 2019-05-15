@@ -87,7 +87,7 @@ type Config struct {
 	// 1. none 2. lock
 	// 3. async 4. buffer
 	WriterMode string `json:"writer_mode"`
-	// BufferWriterThershould in MB
+	// BufferWriterThershould in Byte
 	BufferWriterThershould int `json:"buffer_thershould"`
 	// Compress will compress log file with gzip
 	Compress bool `json:"compress"`

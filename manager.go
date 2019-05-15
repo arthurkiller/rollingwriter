@@ -19,6 +19,7 @@ type manager struct {
 	cr            *cron.Cron
 	context       chan int
 	wg            sync.WaitGroup
+	lock          sync.Mutex
 }
 
 // NewManager generate the Manager with config
@@ -52,25 +53,20 @@ func NewManager(c *Config) (Manager, error) {
 			filepath := LogFilePath(c)
 			var file *os.File
 			var err error
-			if file, err = os.Open(filepath); err != nil {
-				log.Println("error in open file", err)
-				os.Exit(-1)
-			}
 			m.wg.Done()
+
 			for {
 				select {
 				case <-m.context:
 					return
 				case <-timer:
-					if info, err := file.Stat(); err == nil {
-						if info.Size() > m.thresholdSize {
-							if file, err = os.Open(filepath); err != nil {
-								log.Println("error in open file", err)
-							}
-							m.fire <- m.GenLogFileName(c)
-						}
-					} else {
-						log.Println("error in call file stat", err)
+					if file, err = os.Open(filepath); err != nil {
+						log.Println("error in open file", err)
+						// TODO continue?
+						continue
+					}
+					if info, err := file.Stat(); err == nil && info.Size() > m.thresholdSize {
+						m.fire <- m.GenLogFileName(c)
 					}
 				}
 			}
@@ -133,6 +129,7 @@ func (m *manager) ParseVolume(c *Config) {
 
 // GenLogFileName generate the new log file name, filename should be absolute path
 func (m *manager) GenLogFileName(c *Config) (filename string) {
+	m.lock.Lock()
 	// [path-to-log]/filename.log.2007010215041517
 	if c.Compress {
 		filename = path.Join(c.LogPath, c.FileName+".log.gz."+m.startAt.Format(c.TimeTagFormat))
@@ -141,5 +138,6 @@ func (m *manager) GenLogFileName(c *Config) (filename string) {
 	}
 	// reset the start time to now
 	m.startAt = time.Now()
+	m.lock.Unlock()
 	return
 }
