@@ -1,7 +1,6 @@
 package rollingwriter
 
 import (
-	"log"
 	"os"
 	"path"
 	"strconv"
@@ -61,8 +60,6 @@ func NewManager(c *Config) (Manager, error) {
 					return
 				case <-timer:
 					if file, err = os.Open(filepath); err != nil {
-						log.Println("error in open file", err)
-						// TODO continue?
 						continue
 					}
 					if info, err := file.Stat(); err == nil && info.Size() > m.thresholdSize {

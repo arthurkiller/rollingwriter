@@ -1,11 +1,12 @@
 # RollingWriter [![Build Status](https://travis-ci.org/arthurkiller/rollingWriter.svg?branch=master)](https://travis-ci.org/arthurkiller/rollingWriter) [![Go Report Card](https://goreportcard.com/badge/github.com/arthurkiller/rollingwriter)](https://goreportcard.com/report/github.com/arthurkiller/rollingwriter) [![GoDoc](https://godoc.org/github.com/arthurkiller/rollingWriter?status.svg)](https://godoc.org/github.com/arthurkiller/rollingWriter) [![codecov](https://codecov.io/gh/arthurkiller/rollingwriter/branch/master/graph/badge.svg)](https://codecov.io/gh/arthurkiller/rollingwriter) [![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/avelino/awesome-go#logging)
 RollingWriter is an auto rotate `io.Writer` implementation. It can works well with logger.
 
+__Awesome Go popular log helper__
+
 __New Version v2.0 is comming out! Much more Powerfull and Efficient. Try it by follow the demo__
 
-it contains 2 separate patrs:
-* Manager: decide when to rotate the file with policy
-    RlingPolicy give out the rolling policy
+RollingWriter contains 2 separate patrs:
+* Manager: decide when to rotate the file with policy. RlingPolicy give out the rolling policy
     * WithoutRolling: no rolling will happen
     * TimeRolling: rolling by time
     * VolumeRolling: rolling by file size
@@ -20,7 +21,7 @@ it contains 2 separate patrs:
 * Auto rotate with multi rotate policies
 * Implement go io.Writer, provide parallel safe writer
 * Max remain rolling files with auto cleanup
-* Multi writer mode
+* Easy for user to implement your manager
 
 ## Benchmark
 ```bash
