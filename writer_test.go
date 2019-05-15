@@ -62,9 +62,14 @@ func newBufferWriter() *BufferWriter {
 }
 
 func TestNewWriter(t *testing.T) {
-	if _, err := NewWriter(WithRollingVolumeSize("1mb")); err != nil {
+	if _, err := NewWriter(
+		WithTimeTagFormat("200601021504"), WithLogPath("./"), WithFileName("foo"),
+		WithAsynchronous(), WithBuffer(), WithBufferThershould(8), WithCompress(), WithLock(),
+		WithMaxRemain(3), WithRollingVolumeSize("100mb"), WithRollingTimePattern("0 0 0 * * *"),
+	); err != nil {
 		t.Fatal("error in test new writer", err)
 	}
+	os.Remove("./foo.log")
 }
 
 func TestWrite(t *testing.T) {

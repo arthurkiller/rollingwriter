@@ -15,12 +15,12 @@ import (
 // Writer provide a synchronous file writer
 // if Lock is set true, write will be guaranteed by lock
 type Writer struct {
-	file            *os.File
-	absPath         string
-	fire            chan string
-	cf              *Config
-	rollingfilelist []string
-	fileCh          chan string
+	m             Manager
+	file          *os.File
+	absPath       string
+	fire          chan string
+	cf            *Config
+	rollingfilech chan string
 }
 
 // LockedWriter provide a synchronous writer with lock
@@ -43,8 +43,7 @@ type AsynchronousWriter struct {
 // BufferWriter merge some write operations into one.
 type BufferWriter struct {
 	Writer
-	buf     *[]byte
-	n       int64
+	buf     *[]byte // store the pointer for atomic opertaion
 	swaping int32
 }
 
@@ -74,11 +73,6 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		return nil, err
 	}
 
-	filel := make([]string, 0, 7)
-	if c.MaxRemain > 0 {
-		filel = make([]string, 0, c.MaxRemain+1)
-	}
-
 	// Start the Manager
 	mng, err := NewManager(c)
 	if err != nil {
@@ -87,16 +81,15 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 
 	var rollingWriter RollingWriter
 	writer := Writer{
-		file:            file,
-		absPath:         filepath,
-		fire:            mng.Fire(),
-		cf:              c,
-		rollingfilelist: filel,
-		fileCh:          make(chan string),
+		m:       mng,
+		file:    file,
+		absPath: filepath,
+		fire:    mng.Fire(),
+		cf:      c,
 	}
 
 	if c.MaxRemain > 0 {
-		go writer.AutoRemove()
+		writer.rollingfilech = make(chan string, c.MaxRemain)
 	}
 
 	switch c.WriterMode {
@@ -122,7 +115,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		rollingWriter = wr
 	case "buffer":
 		// bufferWriterThershould unit is Byte
-		bf := make([]byte, 0, c.BufferWriterThershould*10)
+		bf := make([]byte, 0, c.BufferWriterThershould*2)
 		rollingWriter = &BufferWriter{
 			Writer:  writer,
 			buf:     &bf,
@@ -161,19 +154,13 @@ func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 	return NewWriterFromConfig(&cfg)
 }
 
-// AutoRemove will delete the oldest file
-func (w *Writer) AutoRemove() {
-	for {
-		file := <-w.fileCh
-		w.rollingfilelist = append(w.rollingfilelist, file)
-
-		for len(w.rollingfilelist) > w.cf.MaxRemain {
-			// remove the oldest file
-			file := w.rollingfilelist[0]
-			if err := os.Remove(file); err != nil {
-				log.Println("error in auto remove log file", err)
-			}
-			w.rollingfilelist = w.rollingfilelist[1:]
+// DoRemove will delete the oldest file
+func (w *Writer) DoRemove() {
+	select {
+	case file := <-w.rollingfilech:
+		// remove the oldest file
+		if err := os.Remove(file); err != nil {
+			log.Println("error in remove log file", file, err)
 		}
 	}
 }
@@ -188,11 +175,11 @@ func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 	gw := gzip.NewWriter(cmpfile)
 	defer gw.Close()
 
-	if _, err := oldfile.Seek(0, 0); err != nil {
+	if _, err = oldfile.Seek(0, 0); err != nil {
 		return err
 	}
 
-	if _, err := io.Copy(gw, oldfile); err != nil {
+	if _, err = io.Copy(gw, oldfile); err != nil {
 		if errR := os.Remove(cmpname); errR != nil {
 			return errR
 		}
@@ -236,7 +223,13 @@ func (w *Writer) Reopen(file string) error {
 		}
 
 		if w.cf.MaxRemain > 0 {
-			w.fileCh <- file
+		retry:
+			select {
+			case w.rollingfilech <- file:
+			default:
+				w.DoRemove()
+				goto retry // remove the file and retry
+			}
 		}
 	}()
 	return nil
@@ -291,7 +284,7 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 			}
 			return l, nil
 		default:
-			w.queue <- append(_asyncBufferPool.Get().([]byte)[0:], b...)[:len(b)]
+			w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
 			return len(b), nil
 		}
 	}
@@ -327,7 +320,7 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 	buf := append(*w.buf, b...)
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer)(&buf))
 	if len(*w.buf) > w.cf.BufferWriterThershould && atomic.CompareAndSwapInt32(&w.swaping, 0, 1) {
-		nb := make([]byte, 0, w.cf.BufferWriterThershould*10)
+		nb := make([]byte, 0, w.cf.BufferWriterThershould*2)
 		ob := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer(&nb)))
 		w.file.Write(*(*[]byte)(ob))
 		atomic.StoreInt32(&w.swaping, 0)
@@ -347,15 +340,14 @@ func (w *LockedWriter) Close() error {
 	return w.file.Close()
 }
 
-// Close set closed and close the file
+// Close set closed and close the file once
 func (w *AsynchronousWriter) Close() error {
 	if atomic.CompareAndSwapInt32(&w.closed, 0, 1) {
 		close(w.ctx)
-	} else {
-		return ErrClosed
+		w.onClose()
+		return w.file.Close()
 	}
-	w.onClose()
-	return w.file.Close()
+	return ErrClosed
 }
 
 // onClose process remaining bufferd data for asynchronous writer
