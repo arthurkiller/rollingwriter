@@ -1,6 +1,5 @@
 language: go
 go:
-- 1.11
 - 1.12
 
 os:
@@ -10,13 +9,6 @@ os:
 env:
   global:
     - GO111MODULE=on
-
-matrix:
-  include:
-  - go: 1.11
-    env: GO111MODULE=off
-  - go: 1.12
-    env: GO111MODULE=on
 
 install:
  - go get -u ./...
