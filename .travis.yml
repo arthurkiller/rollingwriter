@@ -1,16 +1,19 @@
 language: go
-dist: trusty
-sudo: false
-
 go:
- - 1.11.4
+- 1.11
+- 1.12
+
+os:
+  - linux
+  - windows
 
 env:
- global:
-  - GO111MODULE=on
+  global:
+    - GO111MODULE=on
+    - GOMODULE=on
 
 before_install:
- - go mod vendor
+ - go mod download
 
 script:
  - go test -race -coverprofile=coverage.txt -covermode=atomic
