@@ -10,22 +10,14 @@ os:
 env:
   global:
     - GO111MODULE=on
-    - GOMODULE=on
 
-matrix:
-  include:
-  - go: 1.12
-    env: GO111MODULE=on
-  - go: 1.12
-    env: GO111MODULE=off
-  allow_failures:
-  - go: 1.11
-    env: GO111MODULE=on
-  - go: 1.11
-    env: GO111MODULE=off
-
-before_install:
+install:
+ - go get -u ./...
  - go mod download
+
+after_install:
+ - go mod tidy
+ - go mod verify
 
 script:
  - go test -race -coverprofile=coverage.txt -covermode=atomic
