@@ -12,6 +12,18 @@ env:
     - GO111MODULE=on
     - GOMODULE=on
 
+matrix:
+  include:
+  - go: 1.12
+    env: GO111MODULE=on
+  - go: 1.12
+    env: GO111MODULE=off
+  allow_failures:
+  - go: 1.11
+    env: GO111MODULE=on
+  - go: 1.11
+    env: GO111MODULE=off
+
 before_install:
  - go mod download
 
