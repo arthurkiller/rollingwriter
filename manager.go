@@ -65,6 +65,7 @@ func NewManager(c *Config) (Manager, error) {
 					if info, err := file.Stat(); err == nil && info.Size() > m.thresholdSize {
 						m.fire <- m.GenLogFileName(c)
 					}
+					file.Close()
 				}
 			}
 		}()
