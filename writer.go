@@ -142,6 +142,8 @@ func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
+
 	cfg := NewDefaultConfig()
 	buf, err := ioutil.ReadAll(file)
 	if err != nil {
