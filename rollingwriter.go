@@ -201,7 +201,7 @@ func WithRollingVolumeSize(size string) Option {
 	}
 }
 
-// WithRollingPolicy set the rolling policy
+// SetWithoutRolling set the rolling policy withoutrolling
 func SetWithoutRolling() Option {
 	return func(p *Config) {
 		p.RollingPolicy = WithoutRolling
