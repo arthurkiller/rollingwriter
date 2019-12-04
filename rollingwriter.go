@@ -200,3 +200,10 @@ func WithRollingVolumeSize(size string) Option {
 		p.RollingVolumeSize = size
 	}
 }
+
+// WithRollingPolicy set the rolling policy
+func WithRollingPolicy(policy int) Option {
+	return func(p *Config) {
+		p.RollingPolicy = policy
+	}
+}
