@@ -22,7 +22,7 @@ func TestOptions(t *testing.T) {
 		TimeTagFormat:          "200601021504",
 		FileName:               "foo",
 		MaxRemain:              3,             // disable auto delete
-		RollingPolicy:          2,             // TimeRotate by default
+		RollingPolicy:          TimeRolling,   // TimeRotate by default
 		RollingTimePattern:     "0 0 0 * * *", // Rolling at 00:00 AM everyday
 		RollingVolumeSize:      "100mb",
 		WriterMode:             "lock",

@@ -184,11 +184,18 @@ func WithMaxRemain(max int) Option {
 	}
 }
 
+//WithoutRolling set no rolling policy
+func WithoutRolling() Option {
+	return func(p *Config) {
+		p.RollingPolicy = WithoutRolling
+	}
+}
+
 // WithRollingTimePattern set the time rolling policy time pattern obey the Corn table style
 // visit http://crontab.org/ for details
 func WithRollingTimePattern(pattern string) Option {
 	return func(p *Config) {
-		p.RollingPolicy = 1
+		p.RollingPolicy = TimeRolling
 		p.RollingTimePattern = pattern
 	}
 }
@@ -196,7 +203,7 @@ func WithRollingTimePattern(pattern string) Option {
 // WithRollingVolumeSize set the rolling file truncation threshold size
 func WithRollingVolumeSize(size string) Option {
 	return func(p *Config) {
-		p.RollingPolicy = 2
+		p.RollingPolicy = VolumeRolling
 		p.RollingVolumeSize = size
 	}
 }
