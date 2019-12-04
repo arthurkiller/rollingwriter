@@ -188,7 +188,7 @@ func WithMaxRemain(max int) Option {
 // visit http://crontab.org/ for details
 func WithRollingTimePattern(pattern string) Option {
 	return func(p *Config) {
-		p.RollingPolicy = 2
+		p.RollingPolicy = 1
 		p.RollingTimePattern = pattern
 	}
 }
@@ -196,7 +196,7 @@ func WithRollingTimePattern(pattern string) Option {
 // WithRollingVolumeSize set the rolling file truncation threshold size
 func WithRollingVolumeSize(size string) Option {
 	return func(p *Config) {
-		p.RollingPolicy = 3
+		p.RollingPolicy = 2
 		p.RollingVolumeSize = size
 	}
 }
