@@ -185,7 +185,7 @@ func WithMaxRemain(max int) Option {
 }
 
 //WithoutRolling set no rolling policy
-func WithoutRolling() Option {
+func WithoutRollingPolicy() Option {
 	return func(p *Config) {
 		p.RollingPolicy = WithoutRolling
 	}
