@@ -10,6 +10,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+	"sort"
+	"time"
+	"strings"
+	"path"
 )
 
 // Writer provide a synchronous file writer
@@ -90,6 +94,45 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 
 	if c.MaxRemain > 0 {
 		writer.rollingfilech = make(chan string, c.MaxRemain)
+		dir, err := ioutil.ReadDir(c.LogPath)
+		if err != nil {
+		  return nil, err
+		}
+
+		files := make([]string, 0, 10)
+		for _, fi := range dir {
+			if fi.IsDir() {
+			    continue
+			}
+
+			fileName := c.FileName +".log."
+			if strings.Contains(fi.Name(), fileName) {
+				fileSuffix := path.Ext(fi.Name())
+				if len(fileSuffix) > 1 {
+						_,err:=time.Parse(c.TimeTagFormat,fileSuffix[1:])
+						if err == nil {
+							files = append(files, fi.Name())
+						}
+				}
+			}
+		}
+		sort.Slice(files, func(i, j int) bool {
+		    fileSuffix1 := path.Ext(files[i])
+			fileSuffix2 := path.Ext(files[j])
+			t1,_:=time.Parse(c.TimeTagFormat,fileSuffix1[1:])
+			t2,_:=time.Parse(c.TimeTagFormat,fileSuffix2[1:])
+			return t1.Before(t2)
+		 })
+
+		for _,file := range files {
+			retry:
+				select {
+				case writer.rollingfilech <- path.Join(c.LogPath,file):
+				default:
+					writer.DoRemove()
+					goto retry // remove the file and retry
+				}
+		}
 	}
 
 	switch c.WriterMode {
