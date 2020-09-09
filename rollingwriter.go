@@ -91,6 +91,9 @@ type Config struct {
 	BufferWriterThershould int `json:"buffer_thershould"`
 	// Compress will compress log file with gzip
 	Compress bool `json:"compress"`
+
+	// FilterEmptyBackup will not backup empty file if you set it true
+	FilterEmptyBackup bool `json:"filter_empty_backup"`
 }
 
 // NewDefaultConfig return the default config
