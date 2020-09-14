@@ -292,15 +292,18 @@ func (w *Writer) Reopen(file string) error {
 }
 
 func (w *Writer) Write(b []byte) (int, error) {
-DoWrite:
-	select {
-	case filename := <-w.fire:
-		if err := w.Reopen(filename); err != nil {
-			return 0, err
+	var ok = false
+	for ! ok {
+		select {
+		case filename := <-w.fire:
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
+			}
+		default:
+			ok = true
 		}
-		goto DoWrite
-	default:
 	}
+
 	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
 	file := (*os.File)(fp)
 	return file.Write(b)
@@ -308,15 +311,19 @@ DoWrite:
 
 func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	w.Lock()
-DoWrite:
-	select {
-	case filename := <-w.fire:
-		if err := w.Reopen(filename); err != nil {
-			return 0, err
+
+	var ok = false
+	for ! ok {
+		select {
+		case filename := <-w.fire:
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
+			}
+		default:
+			ok = true
 		}
-		goto DoWrite
-	default:
 	}
+
 	n, err = w.file.Write(b)
 	w.Unlock()
 	return
@@ -325,18 +332,23 @@ DoWrite:
 // Only when the error channel is empty, otherwise nothing will write and the last error will be return
 // return the error channel
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
-DoWrite:
 	if atomic.LoadInt32(&w.closed) == 0 {
+		var ok = false
+		for ! ok {
+			select {
+			case filename := <-w.fire:
+				if err := w.Reopen(filename); err != nil {
+					return 0, err
+				}
+			default:
+				ok = true
+			}
+		}
+
 		select {
 		case err := <-w.errChan:
 			// NOTE this error caused by last write maybe ignored
 			return 0, err
-		case filename := <-w.fire:
-			if err := w.Reopen(filename); err != nil {
-				return 0, err
-			}
-
-			goto DoWrite
 		default:
 			w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
 			return len(b), nil
@@ -364,15 +376,18 @@ func (w *AsynchronousWriter) writer() {
 }
 
 func (w *BufferWriter) Write(b []byte) (int, error) {
-DoWrite:
-	select {
-	case filename := <-w.fire:
-		if err := w.Reopen(filename); err != nil {
-			return 0, err
+	var ok = false
+	for ! ok {
+		select {
+		case filename := <-w.fire:
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
+			}
+		default:
+			ok = true
 		}
-		goto DoWrite
-	default:
 	}
+
 	buf := append(*w.buf, b...)
 	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer)(&buf))
 	if len(*w.buf) > w.cf.BufferWriterThershould && atomic.CompareAndSwapInt32(&w.swaping, 0, 1) {
