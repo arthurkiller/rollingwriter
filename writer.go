@@ -340,19 +340,17 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 				if err := w.Reopen(filename); err != nil {
 					return 0, err
 				}
+			case err := <-w.errChan:
+				// NOTE this error caused by last write maybe ignored
+				return 0, err
+
 			default:
 				ok = true
 			}
 		}
 
-		select {
-		case err := <-w.errChan:
-			// NOTE this error caused by last write maybe ignored
-			return 0, err
-		default:
-			w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
-			return len(b), nil
-		}
+		w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
+		return len(b), nil
 	}
 	return 0, ErrClosed
 }
