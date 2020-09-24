@@ -49,6 +49,8 @@ type BufferWriter struct {
 	Writer
 	buf     *[]byte // store the pointer for atomic opertaion
 	swaping int32
+
+	lockBuf Locker // protect the buffer by spinlock
 }
 
 // buffer pool for asynchronous writer
@@ -386,8 +388,10 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 		}
 	}
 
-	buf := append(*w.buf, b...)
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer)(&buf))
+	w.lockBuf.Lock()
+	*(w.buf) = append(*w.buf, b...)
+	w.lockBuf.Unlock()
+
 	if len(*w.buf) > w.cf.BufferWriterThershould && atomic.CompareAndSwapInt32(&w.swaping, 0, 1) {
 		nb := make([]byte, 0, w.cf.BufferWriterThershould*2)
 		ob := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer(&nb)))
@@ -443,6 +447,8 @@ func (w *AsynchronousWriter) onClose() {
 
 // Close bufferWriter flush all buffered write then close file
 func (w *BufferWriter) Close() error {
+	w.lockBuf.Lock()
+	defer w.lockBuf.Unlock()
 	w.file.Write(*w.buf)
 	return w.file.Close()
 }
