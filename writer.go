@@ -7,13 +7,13 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
-	"unsafe"
-	"sort"
 	"time"
-	"strings"
-	"path"
+	"unsafe"
 )
 
 // Writer provide a synchronous file writer
@@ -98,42 +98,42 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		writer.rollingfilech = make(chan string, c.MaxRemain)
 		dir, err := ioutil.ReadDir(c.LogPath)
 		if err != nil {
-		  return nil, err
+			return nil, err
 		}
 
 		files := make([]string, 0, 10)
 		for _, fi := range dir {
 			if fi.IsDir() {
-			    continue
+				continue
 			}
 
-			fileName := c.FileName +".log."
+			fileName := c.FileName + ".log."
 			if strings.Contains(fi.Name(), fileName) {
 				fileSuffix := path.Ext(fi.Name())
 				if len(fileSuffix) > 1 {
-						_,err:=time.Parse(c.TimeTagFormat,fileSuffix[1:])
-						if err == nil {
-							files = append(files, fi.Name())
-						}
+					_, err := time.Parse(c.TimeTagFormat, fileSuffix[1:])
+					if err == nil {
+						files = append(files, fi.Name())
+					}
 				}
 			}
 		}
 		sort.Slice(files, func(i, j int) bool {
-		    fileSuffix1 := path.Ext(files[i])
+			fileSuffix1 := path.Ext(files[i])
 			fileSuffix2 := path.Ext(files[j])
-			t1,_:=time.Parse(c.TimeTagFormat,fileSuffix1[1:])
-			t2,_:=time.Parse(c.TimeTagFormat,fileSuffix2[1:])
+			t1, _ := time.Parse(c.TimeTagFormat, fileSuffix1[1:])
+			t2, _ := time.Parse(c.TimeTagFormat, fileSuffix2[1:])
 			return t1.Before(t2)
-		 })
+		})
 
-		for _,file := range files {
-			retry:
-				select {
-				case writer.rollingfilech <- path.Join(c.LogPath,file):
-				default:
-					writer.DoRemove()
-					goto retry // remove the file and retry
-				}
+		for _, file := range files {
+		retry:
+			select {
+			case writer.rollingfilech <- path.Join(c.LogPath, file):
+			default:
+				writer.DoRemove()
+				goto retry // remove the file and retry
+			}
 		}
 	}
 
@@ -245,6 +245,17 @@ func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
 
 // Reopen do the rotate, open new file and swap FD then trate the old FD
 func (w *Writer) Reopen(file string) error {
+	if w.cf.FilterEmptyBackup {
+		fileInfo, err := w.file.Stat()
+		if err != nil {
+			return err
+		}
+
+		if fileInfo.Size() == 0 {
+			return nil
+		}
+	}
+
 	if err := os.Rename(w.absPath, file); err != nil {
 		return err
 	}
@@ -283,13 +294,18 @@ func (w *Writer) Reopen(file string) error {
 }
 
 func (w *Writer) Write(b []byte) (int, error) {
-	select {
-	case filename := <-w.fire:
-		if err := w.Reopen(filename); err != nil {
-			return 0, err
+	var ok = false
+	for ! ok {
+		select {
+		case filename := <-w.fire:
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
+			}
+		default:
+			ok = true
 		}
-	default:
 	}
+
 	fp := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))
 	file := (*os.File)(fp)
 	return file.Write(b)
@@ -297,13 +313,19 @@ func (w *Writer) Write(b []byte) (int, error) {
 
 func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	w.Lock()
-	select {
-	case filename := <-w.fire:
-		if err := w.Reopen(filename); err != nil {
-			return 0, err
+
+	var ok = false
+	for ! ok {
+		select {
+		case filename := <-w.fire:
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
+			}
+		default:
+			ok = true
 		}
-	default:
 	}
+
 	n, err = w.file.Write(b)
 	w.Unlock()
 	return
@@ -313,27 +335,24 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 // return the error channel
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 	if atomic.LoadInt32(&w.closed) == 0 {
-		select {
-		case err := <-w.errChan:
-			// NOTE this error caused by last write maybe ignored
-			return 0, err
-		case filename := <-w.fire:
-			if err := w.Reopen(filename); err != nil {
+		var ok = false
+		for ! ok {
+			select {
+			case filename := <-w.fire:
+				if err := w.Reopen(filename); err != nil {
+					return 0, err
+				}
+			case err := <-w.errChan:
+				// NOTE this error caused by last write maybe ignored
 				return 0, err
-			}
 
-			l := len(b)
-			for len(b) > 0 {
-				buf := _asyncBufferPool.Get().([]byte)
-				n := copy(buf, b)
-				w.queue <- buf[:n]
-				b = b[n:]
+			default:
+				ok = true
 			}
-			return l, nil
-		default:
-			w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
-			return len(b), nil
 		}
+
+		w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
+		return len(b), nil
 	}
 	return 0, ErrClosed
 }
@@ -357,12 +376,16 @@ func (w *AsynchronousWriter) writer() {
 }
 
 func (w *BufferWriter) Write(b []byte) (int, error) {
-	select {
-	case filename := <-w.fire:
-		if err := w.Reopen(filename); err != nil {
-			return 0, err
+	var ok = false
+	for ! ok {
+		select {
+		case filename := <-w.fire:
+			if err := w.Reopen(filename); err != nil {
+				return 0, err
+			}
+		default:
+			ok = true
 		}
-	default:
 	}
 
 	w.lockBuf.Lock()
