@@ -313,13 +313,13 @@ func (w *Writer) Write(b []byte) (int, error) {
 
 func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	w.Lock()
-	defer w.Unlock()
 
 	var ok = false
 	for ! ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {
+				w.Unlock()
 				return 0, err
 			}
 		default:
@@ -328,6 +328,7 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	}
 
 	n, err = w.file.Write(b)
+	w.Unlock()
 	return
 }
 
