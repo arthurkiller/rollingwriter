@@ -313,6 +313,7 @@ func (w *Writer) Write(b []byte) (int, error) {
 
 func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	w.Lock()
+	defer w.Unlock()
 
 	var ok = false
 	for ! ok {
@@ -327,7 +328,6 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	}
 
 	n, err = w.file.Write(b)
-	w.Unlock()
 	return
 }
 
