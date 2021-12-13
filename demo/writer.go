@@ -19,7 +19,7 @@ func main() {
 
 		// 目前有2中滚动策略: 按照时间滚动按照大小滚动
 		// - 时间滚动: 配置策略如同 crontable, 例如,每天0:0切分, 则配置 0 0 0 * * *
-		// - 大小滚动: 配置单个日志文件(未压缩)的滚动大小门限, 入1G, 500M
+		// - 大小滚动: 配置单个日志文件(未压缩)的滚动大小门限, 如1G, 500M
 		RollingPolicy:      rollingwriter.TimeRolling, //配置滚动策略 norolling timerolling volumerolling
 		RollingTimePattern: "* * * * * *",             //配置时间滚动策略
 		RollingVolumeSize:  "2k",                      //配置截断文件下限大小
