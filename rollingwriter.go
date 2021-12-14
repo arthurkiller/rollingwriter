@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"time"
 )
 
 // RollingPolicies giveout 3 policy for rolling.
@@ -71,7 +72,9 @@ type Config struct {
 	LogPath       string `json:"log_path"`
 	FileName      string `json:"file_name"`
 	// MaxRemain will auto clear the roling file list, set 0 will disable auto clean
-	MaxRemain int `json:"max_remain"`
+	// MaxAge will limit the storage time of log files
+	MaxRemain int           `json:"max_remain"`
+	MaxAge    time.Duration `json:"max_age"`
 
 	// RollingPolicy give out the rolling policy
 	// We got 3 policies(actually, 2):
@@ -194,7 +197,7 @@ func WithoutRollingPolicy() Option {
 	}
 }
 
-// WithRollingTimePattern set the time rolling policy time pattern obey the Corn table style
+// WithRollingTimePattern set the time rolling policy time FileName obey the Corn table style
 // visit http://crontab.org/ for details
 func WithRollingTimePattern(pattern string) Option {
 	return func(p *Config) {

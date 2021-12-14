@@ -3,12 +3,13 @@ package rollingwriter
 import (
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
-	"sort"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -71,16 +72,17 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	if err := os.MkdirAll(c.LogPath, 0700); err != nil {
 		return nil, err
 	}
-
-	filepath := LogFilePath(c)
-	// open the file and get the FD
-	file, err := os.OpenFile(filepath, DefaultFileFlag, DefaultFileMode)
+	// Start the Manager
+	mng, err := NewManager(c)
 	if err != nil {
 		return nil, err
 	}
 
-	// Start the Manager
-	mng, err := NewManager(c)
+	fmt.Println(1)
+	filePath := <-mng.Fire()
+	fmt.Println(filePath)
+	// open the file and get the FD
+	file, err := os.OpenFile(filePath, DefaultFileFlag, DefaultFileMode)
 	if err != nil {
 		return nil, err
 	}
@@ -89,53 +91,12 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 	writer := Writer{
 		m:       mng,
 		file:    file,
-		absPath: filepath,
+		absPath: filePath,
 		fire:    mng.Fire(),
 		cf:      c,
 	}
 
-	if c.MaxRemain > 0 {
-		writer.rollingfilech = make(chan string, c.MaxRemain)
-		dir, err := ioutil.ReadDir(c.LogPath)
-		if err != nil {
-			return nil, err
-		}
-
-		files := make([]string, 0, 10)
-		for _, fi := range dir {
-			if fi.IsDir() {
-				continue
-			}
-
-			fileName := c.FileName + ".log."
-			if strings.Contains(fi.Name(), fileName) {
-				fileSuffix := path.Ext(fi.Name())
-				if len(fileSuffix) > 1 {
-					_, err := time.Parse(c.TimeTagFormat, fileSuffix[1:])
-					if err == nil {
-						files = append(files, fi.Name())
-					}
-				}
-			}
-		}
-		sort.Slice(files, func(i, j int) bool {
-			fileSuffix1 := path.Ext(files[i])
-			fileSuffix2 := path.Ext(files[j])
-			t1, _ := time.Parse(c.TimeTagFormat, fileSuffix1[1:])
-			t2, _ := time.Parse(c.TimeTagFormat, fileSuffix2[1:])
-			return t1.Before(t2)
-		})
-
-		for _, file := range files {
-		retry:
-			select {
-			case writer.rollingfilech <- path.Join(c.LogPath, file):
-			default:
-				writer.DoRemove()
-				goto retry // remove the file and retry
-			}
-		}
-	}
+	writer.DoRemove()
 
 	switch c.WriterMode {
 	case "none":
@@ -203,18 +164,74 @@ func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 
 // DoRemove will delete the oldest file
 func (w *Writer) DoRemove() {
-	select {
-	case file := <-w.rollingfilech:
-		// remove the oldest file
-		if err := os.Remove(file); err != nil {
-			log.Println("error in remove log file", file, err)
+	if w.cf.MaxRemain > 0 || w.cf.MaxAge > 0 {
+		globPattern := path.Join(w.cf.LogPath, w.cf.FileName)
+		for _, re := range patternConversionRegexps {
+			globPattern = re.ReplaceAllString(globPattern, "*")
 		}
+		globPattern += ".log*"
+
+		matches, err := filepath.Glob(globPattern)
+		if err != nil {
+			return
+		}
+		cutoff := time.Now().Add(-1 * w.cf.MaxAge)
+		var toDel []string
+		ignore := 0
+		for _, p := range matches {
+			// Ignore lock files
+			if strings.HasSuffix(p, "_lock") || strings.HasSuffix(p, "_symlink") {
+				ignore++
+				continue
+			}
+
+			fi, err := os.Stat(p)
+			if err != nil {
+				continue
+			}
+
+			fl, err := os.Lstat(p)
+			if err != nil {
+				continue
+			}
+
+			if w.cf.MaxRemain > 0 && fl.Mode()&os.ModeSymlink == os.ModeSymlink {
+				ignore++
+				continue
+			}
+
+			if w.cf.MaxRemain > 0 && w.cf.MaxRemain < len(matches)-ignore-len(toDel) {
+				toDel = append(toDel, p)
+				continue
+			}
+
+			if w.cf.MaxAge > 0 && fi.ModTime().After(cutoff) {
+				continue
+			}
+			toDel = append(toDel, p)
+		}
+
+		if len(toDel) <= 0 {
+			return
+		}
+
+		go func() {
+			// del files on a separate goroutine
+			for _, p := range toDel {
+				if err := os.Remove(p); err != nil {
+					log.Println("error in remove log file", p, err)
+				}
+			}
+		}()
 	}
 }
 
 // CompressFile compress log file write into .gz and remove source file
 func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
-	cmpfile, err := os.OpenFile(cmpname, DefaultFileFlag, DefaultFileMode)
+	if err := os.Rename(cmpname, cmpname+".tmp"); err != nil {
+		return err
+	}
+	cmpfile, err := os.OpenFile(cmpname+".gz", DefaultFileFlag, DefaultFileMode)
 	defer cmpfile.Close()
 	if err != nil {
 		return err
@@ -232,10 +249,10 @@ func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 		}
 		return err
 	}
-	return os.Remove(cmpname + ".tmp") // remove *.log.tmp file
+	return os.Remove(cmpname + ".tmp")
 }
 
-// AsynchronousWriterErrorChan return the error channel for asyn writer
+// AsynchronousWriterErrorChan return the error channel for async writer
 func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
 	if w, ok := wr.(*AsynchronousWriter); ok {
 		return w.errChan, nil
@@ -243,7 +260,7 @@ func AsynchronousWriterErrorChan(wr RollingWriter) (chan error, error) {
 	return nil, ErrInvalidArgument
 }
 
-// Reopen do the rotate, open new file and swap FD then trate the old FD
+// Reopen do rotate, open new file and swap FD then trade the old FD
 func (w *Writer) Reopen(file string) error {
 	if w.cf.FilterEmptyBackup {
 		fileInfo, err := w.file.Stat()
@@ -256,46 +273,33 @@ func (w *Writer) Reopen(file string) error {
 		}
 	}
 
-	if err := os.Rename(w.absPath, file); err != nil {
-		return err
-	}
-	newfile, err := os.OpenFile(w.absPath, DefaultFileFlag, DefaultFileMode)
+	newFile, err := os.OpenFile(file, DefaultFileFlag, DefaultFileMode)
 	if err != nil {
 		return err
 	}
 
 	// swap the unsafe pointer
-	oldfile := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
+	oldFile := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newFile))
 
-	go func() {
-		defer (*os.File)(oldfile).Close()
+	go func(oldPath string) {
+		defer (*os.File)(oldFile).Close()
 		if w.cf.Compress {
-			if err := os.Rename(file, file+".tmp"); err != nil {
-				log.Println("error in compress rename tempfile", err)
-				return
-			}
-			if err := w.CompressFile((*os.File)(oldfile), file); err != nil {
+			// write the compressed data to the origin path
+			if err := w.CompressFile((*os.File)(oldFile), oldPath); err != nil {
 				log.Println("error in compress log file", err)
 				return
 			}
 		}
 
-		if w.cf.MaxRemain > 0 {
-		retry:
-			select {
-			case w.rollingfilech <- file:
-			default:
-				w.DoRemove()
-				goto retry // remove the file and retry
-			}
-		}
-	}()
+		w.DoRemove()
+	}(w.absPath)
+	w.absPath = file
 	return nil
 }
 
 func (w *Writer) Write(b []byte) (int, error) {
 	var ok = false
-	for ! ok {
+	for !ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {
@@ -315,7 +319,7 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	w.Lock()
 
 	var ok = false
-	for ! ok {
+	for !ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {
@@ -337,7 +341,7 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 	if atomic.LoadInt32(&w.closed) == 0 {
 		var ok = false
-		for ! ok {
+		for !ok {
 			select {
 			case filename := <-w.fire:
 				if err := w.Reopen(filename); err != nil {
@@ -378,7 +382,7 @@ func (w *AsynchronousWriter) writer() {
 
 func (w *BufferWriter) Write(b []byte) (int, error) {
 	var ok = false
-	for ! ok {
+	for !ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {

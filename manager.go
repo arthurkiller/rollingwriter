@@ -1,13 +1,17 @@
 package rollingwriter
 
 import (
+	"fmt"
+	"github.com/pkg/errors"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lestrrat-go/strftime"
 	"github.com/robfig/cron"
 )
 
@@ -19,17 +23,43 @@ type manager struct {
 	context       chan int
 	wg            sync.WaitGroup
 	lock          sync.Mutex
+	FileName      *strftime.Strftime
+	LogPath       string
+	TimeTagFormat string
+	GlobFileName  string
+}
+
+var patternConversionRegexps = []*regexp.Regexp{
+	regexp.MustCompile(`%[%+A-Za-z]`),
+	regexp.MustCompile(`\*+`),
 }
 
 // NewManager generate the Manager with config
 func NewManager(c *Config) (Manager, error) {
 	m := &manager{
-		startAt: time.Now(),
-		cr:      cron.New(),
-		fire:    make(chan string),
-		context: make(chan int),
-		wg:      sync.WaitGroup{},
+		startAt:       time.Now(),
+		cr:            cron.New(),
+		fire:          make(chan string, 1),
+		context:       make(chan int),
+		wg:            sync.WaitGroup{},
+		LogPath:       c.LogPath,
+		TimeTagFormat: c.TimeTagFormat,
 	}
+
+	// build globFileName for regexp log file
+	m.GlobFileName = path.Join(m.LogPath, c.FileName)
+	for _, re := range patternConversionRegexps {
+		m.GlobFileName = re.ReplaceAllString(m.GlobFileName, "*")
+	}
+
+	pattern, err := strftime.New(c.FileName)
+	if err != nil {
+		return nil, errors.Wrap(err, `invalid strftime FileName`)
+	}
+	m.FileName = pattern
+
+	// gen file name for init
+	m.fire <- m.GenLogFileName()
 
 	// start the manager according to policy
 	switch c.RollingPolicy {
@@ -39,7 +69,8 @@ func NewManager(c *Config) (Manager, error) {
 		return m, nil
 	case TimeRolling:
 		if err := m.cr.AddFunc(c.RollingTimePattern, func() {
-			m.fire <- m.GenLogFileName(c)
+			fmt.Println(m.GenLogFileName())
+			m.fire <- m.GenLogFileName()
 		}); err != nil {
 			return nil, err
 		}
@@ -49,7 +80,7 @@ func NewManager(c *Config) (Manager, error) {
 		m.wg.Add(1)
 		go func() {
 			timer := time.Tick(time.Duration(Precision) * time.Second)
-			filepath := LogFilePath(c)
+			filepath := m.GenLogFileName()
 			var file *os.File
 			var err error
 			m.wg.Done()
@@ -63,7 +94,7 @@ func NewManager(c *Config) (Manager, error) {
 						continue
 					}
 					if info, err := file.Stat(); err == nil && info.Size() > m.thresholdSize {
-						m.fire <- m.GenLogFileName(c)
+						m.fire <- m.GenLogFileName()
 					}
 					file.Close()
 				}
@@ -126,16 +157,15 @@ func (m *manager) ParseVolume(c *Config) {
 }
 
 // GenLogFileName generate the new log file name, filename should be absolute path
-func (m *manager) GenLogFileName(c *Config) (filename string) {
+func (m *manager) GenLogFileName() (filename string) {
 	m.lock.Lock()
 	// [path-to-log]/filename.log.2007010215041517
-	if c.Compress {
-		filename = path.Join(c.LogPath, c.FileName+".log.gz."+m.startAt.Format(c.TimeTagFormat))
-	} else {
-		filename = path.Join(c.LogPath, c.FileName+".log."+m.startAt.Format(c.TimeTagFormat))
+	m.startAt = time.Now()
+	filename = path.Join(m.LogPath, m.FileName.FormatString(m.startAt)+".log")
+	if m.TimeTagFormat != "" {
+		filename += "." + m.startAt.Format(m.TimeTagFormat)
 	}
 	// reset the start time to now
-	m.startAt = time.Now()
 	m.lock.Unlock()
 	return
 }
