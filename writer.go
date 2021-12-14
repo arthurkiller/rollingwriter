@@ -219,7 +219,7 @@ func (w *Writer) DoRemove() {
 			// del files on a separate goroutine
 			for _, p := range toDel {
 				if err := os.Remove(p); err != nil {
-					log.Println("error in remove log file", p, err)
+					log.Println("error in remove log file: ", p, err)
 				}
 			}
 		}()
@@ -228,9 +228,6 @@ func (w *Writer) DoRemove() {
 
 // CompressFile compress log file write into .gz and remove source file
 func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
-	if err := os.Rename(cmpname, cmpname+".tmp"); err != nil {
-		return err
-	}
 	cmpfile, err := os.OpenFile(cmpname+".gz", DefaultFileFlag, DefaultFileMode)
 	defer cmpfile.Close()
 	if err != nil {
@@ -249,7 +246,7 @@ func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 		}
 		return err
 	}
-	return os.Remove(cmpname + ".tmp")
+	return nil
 }
 
 // AsynchronousWriterErrorChan return the error channel for async writer
@@ -282,13 +279,17 @@ func (w *Writer) Reopen(file string) error {
 	oldFile := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newFile))
 
 	go func(oldPath string) {
-		defer (*os.File)(oldFile).Close()
 		if w.cf.Compress {
 			// write the compressed data to the origin path
 			if err := w.CompressFile((*os.File)(oldFile), oldPath); err != nil {
 				log.Println("error in compress log file", err)
 				return
 			}
+		}
+		(*os.File)(oldFile).Close()
+		err := os.Remove(oldPath)
+		if err != nil {
+			return
 		}
 
 		w.DoRemove()
