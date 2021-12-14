@@ -3,7 +3,6 @@ package rollingwriter
 import (
 	"compress/gzip"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -78,9 +77,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		return nil, err
 	}
 
-	fmt.Println(1)
 	filePath := <-mng.Fire()
-	fmt.Println(filePath)
 	// open the file and get the FD
 	file, err := os.OpenFile(filePath, DefaultFileFlag, DefaultFileMode)
 	if err != nil {

@@ -1,7 +1,6 @@
 package rollingwriter
 
 import (
-	"fmt"
 	"github.com/pkg/errors"
 	"os"
 	"path"
@@ -69,7 +68,6 @@ func NewManager(c *Config) (Manager, error) {
 		return m, nil
 	case TimeRolling:
 		if err := m.cr.AddFunc(c.RollingTimePattern, func() {
-			fmt.Println(m.GenLogFileName())
 			m.fire <- m.GenLogFileName()
 		}); err != nil {
 			return nil, err
