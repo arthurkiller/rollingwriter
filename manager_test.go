@@ -9,13 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func newTimeManager() manager {
-	return manager{}
-}
-func newSizeManager() manager {
-	return manager{}
-}
-
 func TestParseVolume(t *testing.T) {
 	c := &Config{}
 	m := manager{}

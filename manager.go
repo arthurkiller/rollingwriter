@@ -77,7 +77,8 @@ func NewManager(c *Config) (Manager, error) {
 		m.ParseVolume(c)
 		m.wg.Add(1)
 		go func() {
-			timer := time.Tick(time.Duration(Precision) * time.Second)
+			ticker := time.NewTicker(time.Duration(Precision) * time.Second)
+			defer ticker.Stop()
 			filepath := m.GenLogFileName()
 			var file *os.File
 			var err error
@@ -87,7 +88,7 @@ func NewManager(c *Config) (Manager, error) {
 				select {
 				case <-m.context:
 					return
-				case <-timer:
+				case <-ticker.C:
 					if file, err = os.Open(filepath); err != nil {
 						continue
 					}

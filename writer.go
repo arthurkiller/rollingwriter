@@ -19,12 +19,11 @@ import (
 // Writer provide a synchronous file writer
 // if Lock is set true, write will be guaranteed by lock
 type Writer struct {
-	m             Manager
-	file          *os.File
-	absPath       string
-	fire          chan string
-	cf            *Config
-	rollingfilech chan string
+	m       Manager
+	file    *os.File
+	absPath string
+	fire    chan string
+	cf      *Config
 }
 
 // LockedWriter provide a synchronous writer with lock
@@ -226,7 +225,12 @@ func (w *Writer) DoRemove() {
 // CompressFile compress log file write into .gz and remove source file
 func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 	cmpfile, err := os.OpenFile(cmpname+".gz", DefaultFileFlag, DefaultFileMode)
-	defer cmpfile.Close()
+	defer func(cmpfile *os.File) {
+		err := cmpfile.Close()
+		if err != nil {
+			return
+		}
+	}(cmpfile)
 	if err != nil {
 		return err
 	}
@@ -371,7 +375,7 @@ func (w *AsynchronousWriter) writer() {
 			if _, err = w.file.Write(b); err != nil {
 				w.errChan <- err
 			}
-			_asyncBufferPool.Put(b)
+			_asyncBufferPool.Put(&b)
 		case <-w.ctx:
 			return
 		}
@@ -398,7 +402,10 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 	if len(*w.buf) > w.cf.BufferWriterThershould && atomic.CompareAndSwapInt32(&w.swaping, 0, 1) {
 		nb := make([]byte, 0, w.cf.BufferWriterThershould*2)
 		ob := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.buf)), (unsafe.Pointer(&nb)))
-		w.file.Write(*(*[]byte)(ob))
+		l, err := w.file.Write(*(*[]byte)(ob))
+		if err != nil {
+			return l, err
+		}
 		atomic.StoreInt32(&w.swaping, 0)
 	}
 	return len(b), nil
@@ -437,11 +444,11 @@ func (w *AsynchronousWriter) onClose() {
 				select {
 				case w.errChan <- err:
 				default:
-					_asyncBufferPool.Put(b)
+					_asyncBufferPool.Put(&b)
 					return
 				}
 			}
-			_asyncBufferPool.Put(b)
+			_asyncBufferPool.Put(&b)
 		default: // after the queue was empty, return
 			return
 		}
@@ -452,6 +459,9 @@ func (w *AsynchronousWriter) onClose() {
 func (w *BufferWriter) Close() error {
 	w.lockBuf.Lock()
 	defer w.lockBuf.Unlock()
-	w.file.Write(*w.buf)
+	_, err := w.file.Write(*w.buf)
+	if err != nil {
+		return err
+	}
 	return w.file.Close()
 }
