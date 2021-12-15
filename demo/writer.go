@@ -12,10 +12,13 @@ func main() {
 	// writer 实现了 io.Writer 的全部接口
 	// 使用配置方式生成一个 writer 或者 Option 都可以
 	config := rollingwriter.Config{
-		LogPath:       "./log",        //日志路径
-		TimeTagFormat: "060102150405", //时间格式串
-		FileName:      "test",         //日志文件名
-		MaxRemain:     5,              //配置日志最大存留数
+		LogPath:       "./log",               //日志路径
+		TimeTagFormat: "060102150405",        //时间格式串 如加入则会在文件的末尾加上格式化后的时间字符串 如：xxx.log.20210202
+		FileName:      "test-%Y-%m-%d-%H-%M", //日志文件名 支持格式化时间 更多使用方式请查阅 https://github.com/lestrrat-go/strftime
+
+		// 可同时设置，两种限制优先达到哪一个优先选用哪一个
+		MaxRemain: 5,             //配置日志最大存留数
+		MaxAge:    5 * time.Hour, //日志最长留存时间
 
 		// 目前有2中滚动策略: 按照时间滚动按照大小滚动
 		// - 时间滚动: 配置策略如同 crontable, 例如,每天0:0切分, 则配置 0 0 0 * * *

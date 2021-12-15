@@ -1,19 +1,13 @@
 package rollingwriter
 
 import (
+	"github.com/lestrrat-go/strftime"
 	"path"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
-
-func newTimeManager() manager {
-	return manager{}
-}
-func newSizeManager() manager {
-	return manager{}
-}
 
 func TestParseVolume(t *testing.T) {
 	c := &Config{}
@@ -58,20 +52,15 @@ func TestParseVolume(t *testing.T) {
 }
 
 func TestGenLogFileName(t *testing.T) {
-	m := manager{}
-	c := &Config{
+	pattern, _ := strftime.New("file")
+	m := manager{
 		LogPath:       "./",
-		FileName:      "file",
+		FileName:      pattern,
 		TimeTagFormat: "200601021504",
 	}
 	m.startAt = time.Now()
 
-	dest := m.GenLogFileName(c)
-	timetag := m.startAt.Format(c.TimeTagFormat)
+	dest := m.GenLogFileName()
+	timetag := m.startAt.Format(m.TimeTagFormat)
 	assert.Equal(t, path.Join("./", "file"+".log."+timetag), dest)
-
-	c.Compress = true
-	dest = m.GenLogFileName(c)
-	timetag = m.startAt.Format(c.TimeTagFormat)
-	assert.Equal(t, path.Join("./", "file"+".log.gz."+timetag), dest)
 }

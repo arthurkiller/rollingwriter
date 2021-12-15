@@ -8,10 +8,10 @@ import (
 )
 
 func clean() {
-	os.Remove("./test/unittest.log")
-	os.Remove("./test/unittest.reopen")
-	os.Remove("./test/unittest.gz")
-	os.Remove("./test")
+	_ = os.Remove("./test/unittest.log")
+	_ = os.Remove("./test/unittest.reopen")
+	_ = os.Remove("./test/unittest.gz")
+	_ = os.Remove("./test")
 }
 
 func newWriter() *Writer {
@@ -69,7 +69,7 @@ func TestNewWriter(t *testing.T) {
 	); err != nil {
 		t.Fatal("error in test new writer", err)
 	}
-	os.Remove("./foo.log")
+	_ = os.Remove("./foo.log")
 }
 
 func TestWrite(t *testing.T) {
@@ -81,45 +81,45 @@ func TestWrite(t *testing.T) {
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.Close()
+	_ = writer.Close()
 	clean()
 
 	writer = newVolumeWriter()
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.Close()
+	_ = writer.Close()
 	clean()
 
 	writer = newLockedWriter()
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.Close()
+	_ = writer.Close()
 	clean()
 
 	writer = newAsynWriter()
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.Close()
+	_ = writer.Close()
 	clean()
 
 	writer = newBufferWriter()
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.Close()
+	_ = writer.Close()
 	clean()
 }
 
@@ -133,13 +133,13 @@ func TestWriteParallel(t *testing.T) {
 		writer = newWriter()
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 		for i := 0; i < c; i++ {
 			bf := make([]byte, l)
 			rand.Read(bf)
-			writer.Write(bf)
+			_, _ = writer.Write(bf)
 		}
-		writer.Close()
+		_ = writer.Close()
 		clean()
 	})
 }
@@ -154,13 +154,13 @@ func TestVolumeWriteParallel(t *testing.T) {
 		writer = newVolumeWriter()
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 		for i := 0; i < c; i++ {
 			bf := make([]byte, l)
 			rand.Read(bf)
-			writer.Write(bf)
+			_, _ = writer.Write(bf)
 		}
-		writer.Close()
+		_ = writer.Close()
 		clean()
 	})
 }
@@ -175,9 +175,9 @@ func TestWriteLockParallel(t *testing.T) {
 		for i := 0; i < c; i++ {
 			bf := make([]byte, l)
 			rand.Read(bf)
-			writer.Write(bf)
+			_, _ = writer.Write(bf)
 		}
-		writer.Close()
+		_ = writer.Close()
 		clean()
 	})
 
@@ -194,9 +194,9 @@ func TestWriteAsyncParallel(t *testing.T) {
 		for i := 0; i < c; i++ {
 			bf := make([]byte, l)
 			rand.Read(bf)
-			writer.Write(bf)
+			_, _ = writer.Write(bf)
 		}
-		writer.Close()
+		_ = writer.Close()
 		clean()
 	})
 }
@@ -212,9 +212,9 @@ func TestWriteBufferParallel(t *testing.T) {
 		for i := 0; i < c; i++ {
 			bf := make([]byte, l)
 			rand.Read(bf)
-			writer.Write(bf)
+			_, _ = writer.Write(bf)
 		}
-		writer.Close()
+		_ = writer.Close()
 		clean()
 	})
 }
@@ -229,10 +229,10 @@ func TestReopen(t *testing.T) {
 		for i := 0; i < c; i++ {
 			bf := make([]byte, l)
 			rand.Read(bf)
-			writer.Write(bf)
+			_, _ = writer.Write(bf)
 		}
-		writer.Reopen("./test/unittest.reopen")
-		writer.Close()
+		_ = writer.Reopen("./test/unittest.reopen")
+		_ = writer.Close()
 		clean()
 	})
 }
@@ -245,9 +245,9 @@ func TestAutoRemove(t *testing.T) {
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.Close()
+	_ = writer.Close()
 	writer.cf.MaxRemain = 0
 	clean()
 }
@@ -260,9 +260,9 @@ func TestCompress(t *testing.T) {
 	for i := 0; i < c; i++ {
 		bf := make([]byte, l)
 		rand.Read(bf)
-		writer.Write(bf)
+		_, _ = writer.Write(bf)
 	}
-	writer.CompressFile(writer.file, "./test/unittest.gz")
-	writer.Close()
+	_ = writer.CompressFile(writer.file, "./test/unittest.gz")
+	_ = writer.Close()
 	clean()
 }
