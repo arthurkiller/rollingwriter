@@ -2,7 +2,6 @@ package rollingwriter
 
 import (
 	"os"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,12 +127,7 @@ func (m *manager) ParseVolume(c *Config) {
 // GenLogFileName generate the new log file name, filename should be absolute path
 func (m *manager) GenLogFileName(c *Config) (filename string) {
 	m.lock.Lock()
-	// [path-to-log]/filename.log.2007010215041517
-	if c.Compress {
-		filename = path.Join(c.LogPath, c.FileName+".log.gz."+m.startAt.Format(c.TimeTagFormat))
-	} else {
-		filename = path.Join(c.LogPath, c.FileName+".log."+m.startAt.Format(c.TimeTagFormat))
-	}
+	filename = c.fileFormat(m.startAt)
 	// reset the start time to now
 	m.startAt = time.Now()
 	m.lock.Unlock()
