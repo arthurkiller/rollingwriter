@@ -212,13 +212,13 @@ func (w *Writer) DoRemove() {
 	}
 }
 
-// CompressFile compress log file write into .gz and remove source file
+// CompressFile compress log file write into .gz
 func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 	cmpfile, err := os.OpenFile(cmpname, DefaultFileFlag, DefaultFileMode)
-	defer cmpfile.Close()
 	if err != nil {
 		return err
 	}
+	defer cmpfile.Close()
 	gw := gzip.NewWriter(cmpfile)
 	defer gw.Close()
 
@@ -232,7 +232,7 @@ func (w *Writer) CompressFile(oldfile *os.File, cmpname string) error {
 		}
 		return err
 	}
-	return os.Remove(cmpname + ".tmp") // remove *.log.tmp file
+	return nil
 }
 
 // AsynchronousWriterErrorChan return the error channel for asyn writer
@@ -256,6 +256,7 @@ func (w *Writer) Reopen(file string) error {
 		}
 	}
 
+	w.file.Close()
 	if err := os.Rename(w.absPath, file); err != nil {
 		return err
 	}
@@ -264,18 +265,29 @@ func (w *Writer) Reopen(file string) error {
 		return err
 	}
 
-	// swap the unsafe pointer
-	oldfile := atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)), unsafe.Pointer(newfile))
+	w.file = newfile
 
 	go func() {
-		defer (*os.File)(oldfile).Close()
 		if w.cf.Compress {
 			if err := os.Rename(file, file+".tmp"); err != nil {
 				log.Println("error in compress rename tempfile", err)
 				return
 			}
-			if err := w.CompressFile((*os.File)(oldfile), file); err != nil {
+			oldfile, err := os.OpenFile(file+".tmp", DefaultFileFlag, DefaultFileMode)
+			if err != nil {
+				log.Println("error in open tempfile", err)
+				return
+			}
+			var closeOnce sync.Once
+			defer closeOnce.Do(func() { oldfile.Close() })
+			if err := w.CompressFile(oldfile, file); err != nil {
 				log.Println("error in compress log file", err)
+				return
+			}
+			closeOnce.Do(func() { oldfile.Close() })
+			err = os.Remove(file + ".tmp")
+			if err != nil {
+				log.Println("error in remove tempfile", err)
 				return
 			}
 		}
@@ -295,7 +307,7 @@ func (w *Writer) Reopen(file string) error {
 
 func (w *Writer) Write(b []byte) (int, error) {
 	var ok = false
-	for ! ok {
+	for !ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {
@@ -315,7 +327,7 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	w.Lock()
 
 	var ok = false
-	for ! ok {
+	for !ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {
@@ -337,7 +349,7 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 	if atomic.LoadInt32(&w.closed) == 0 {
 		var ok = false
-		for ! ok {
+		for !ok {
 			select {
 			case filename := <-w.fire:
 				if err := w.Reopen(filename); err != nil {
@@ -378,7 +390,7 @@ func (w *AsynchronousWriter) writer() {
 
 func (w *BufferWriter) Write(b []byte) (int, error) {
 	var ok = false
-	for ! ok {
+	for !ok {
 		select {
 		case filename := <-w.fire:
 			if err := w.Reopen(filename); err != nil {
