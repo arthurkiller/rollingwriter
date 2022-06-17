@@ -416,6 +416,10 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 
 // Close the file and return
 func (w *Writer) Close() error {
+	defer recover()
+
+	w.m.Close()
+
 	return (*os.File)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))).Close()
 }
 
