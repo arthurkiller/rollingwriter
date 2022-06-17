@@ -98,6 +98,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		writer.rollingfilech = make(chan string, c.MaxRemain)
 		dir, err := ioutil.ReadDir(c.LogPath)
 		if err != nil {
+			mng.Close()
 			return nil, err
 		}
 
@@ -167,6 +168,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			swaping: 0,
 		}
 	default:
+		mng.Close()
 		return nil, ErrInvalidArgument
 	}
 	return rollingWriter, nil
