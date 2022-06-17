@@ -429,6 +429,12 @@ func (w *Writer) Close() error {
 func (w *LockedWriter) Close() error {
 	w.Lock()
 	defer w.Unlock()
+
+	func() {
+		defer recover()
+		w.m.Close()
+	}()
+
 	return w.file.Close()
 }
 
