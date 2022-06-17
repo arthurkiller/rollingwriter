@@ -443,6 +443,11 @@ func (w *AsynchronousWriter) Close() error {
 	if atomic.CompareAndSwapInt32(&w.closed, 0, 1) {
 		close(w.ctx)
 		w.onClose()
+
+		func() {
+			defer recover()
+			w.m.Close()
+		}()
 		return w.file.Close()
 	}
 	return ErrClosed
@@ -474,6 +479,11 @@ func (w *AsynchronousWriter) onClose() {
 func (w *BufferWriter) Close() error {
 	w.lockBuf.Lock()
 	defer w.lockBuf.Unlock()
+	func() {
+		defer recover()
+		w.m.Close()
+	}()
+
 	w.file.Write(*w.buf)
 	return w.file.Close()
 }
