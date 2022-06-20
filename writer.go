@@ -98,6 +98,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		writer.rollingfilech = make(chan string, c.MaxRemain)
 		dir, err := ioutil.ReadDir(c.LogPath)
 		if err != nil {
+			mng.Close()
 			return nil, err
 		}
 
@@ -167,6 +168,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			swaping: 0,
 		}
 	default:
+		mng.Close()
 		return nil, ErrInvalidArgument
 	}
 	return rollingWriter, nil
@@ -416,6 +418,10 @@ func (w *BufferWriter) Write(b []byte) (int, error) {
 
 // Close the file and return
 func (w *Writer) Close() error {
+	defer recover()
+
+	w.m.Close()
+
 	return (*os.File)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&w.file)))).Close()
 }
 
@@ -423,6 +429,12 @@ func (w *Writer) Close() error {
 func (w *LockedWriter) Close() error {
 	w.Lock()
 	defer w.Unlock()
+
+	func() {
+		defer recover()
+		w.m.Close()
+	}()
+
 	return w.file.Close()
 }
 
@@ -431,6 +443,11 @@ func (w *AsynchronousWriter) Close() error {
 	if atomic.CompareAndSwapInt32(&w.closed, 0, 1) {
 		close(w.ctx)
 		w.onClose()
+
+		func() {
+			defer recover()
+			w.m.Close()
+		}()
 		return w.file.Close()
 	}
 	return ErrClosed
@@ -462,6 +479,11 @@ func (w *AsynchronousWriter) onClose() {
 func (w *BufferWriter) Close() error {
 	w.lockBuf.Lock()
 	defer w.lockBuf.Unlock()
+	func() {
+		defer recover()
+		w.m.Close()
+	}()
+
 	w.file.Write(*w.buf)
 	return w.file.Close()
 }
