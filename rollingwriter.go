@@ -33,6 +33,8 @@ var (
 	ErrClosed = errors.New("error write on close")
 	// ErrInvalidArgument defined the invalid argument
 	ErrInvalidArgument = errors.New("error argument invalid")
+	// ErrQueueFull defined the queue full
+	ErrQueueFull = errors.New("async log queue full")
 )
 
 // Manager used to trigger rolling event.
@@ -187,7 +189,7 @@ func WithMaxRemain(max int) Option {
 	}
 }
 
-//WithoutRolling set no rolling policy
+// WithoutRolling set no rolling policy
 func WithoutRollingPolicy() Option {
 	return func(p *Config) {
 		p.RollingPolicy = WithoutRolling

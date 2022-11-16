@@ -149,7 +149,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		wr := &AsynchronousWriter{
 			ctx:     make(chan int),
 			queue:   make(chan []byte, QueueSize),
-			errChan: make(chan error),
+			errChan: make(chan error, QueueSize),
 			wg:      sync.WaitGroup{},
 			closed:  0,
 			Writer:  writer,
@@ -346,29 +346,29 @@ func (w *LockedWriter) Write(b []byte) (n int, err error) {
 	return
 }
 
-// Only when the error channel is empty, otherwise nothing will write and the last error will be return
-// return the error channel
+// Only when the error channel is empty, otherwise nothing will write and the last error will be
+// returned the error channel
 func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 	if atomic.LoadInt32(&w.closed) == 0 {
 		var ok = false
 		for !ok {
 			select {
-			case filename := <-w.fire:
-				if err := w.Reopen(filename); err != nil {
-					return 0, err
-				}
 			case err := <-w.errChan:
 				// NOTE this error caused by last write maybe ignored
 				return 0, err
-
 			default:
 				ok = true
 			}
 		}
 
-		w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]
-		return len(b), nil
+		select {
+		case w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]:
+			return len(b), nil
+		default:
+			return 0, ErrQueueFull
+		}
 	}
+
 	return 0, ErrClosed
 }
 
@@ -379,8 +379,12 @@ func (w *AsynchronousWriter) writer() {
 	w.wg.Done()
 	for {
 		select {
+		case filename := <-w.fire:
+			if err = w.Reopen(filename); err != nil && len(w.errChan) < cap(w.errChan) {
+				w.errChan <- err
+			}
 		case b := <-w.queue:
-			if _, err = w.file.Write(b); err != nil {
+			if _, err = w.file.Write(b); err != nil && len(w.errChan) < cap(w.errChan) {
 				w.errChan <- err
 			}
 			_asyncBufferPool.Put(b)
