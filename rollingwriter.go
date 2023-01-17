@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
+	"time"
 )
 
 // RollingPolicies giveout 3 policy for rolling.
@@ -52,6 +54,9 @@ type RollingWriter interface {
 	Close() error
 }
 
+// LogFileFormatter log file format function
+type LogFileFormatter func(time.Time) string
+
 // Config give out the config for manager
 type Config struct {
 	// LogPath defined the full path of log file directory.
@@ -72,6 +77,9 @@ type Config struct {
 	TimeTagFormat string `json:"time_tag_format"`
 	LogPath       string `json:"log_path"`
 	FileName      string `json:"file_name"`
+	// FileFormatter log file path formatter for the file start write
+	// By default, append '.gz' suffix when Compress is true
+	FileFormatter LogFileFormatter `json:"-"`
 	// MaxRemain will auto clear the roling file list, set 0 will disable auto clean
 	MaxRemain int `json:"max_remain"`
 
@@ -96,6 +104,24 @@ type Config struct {
 
 	// FilterEmptyBackup will not backup empty file if you set it true
 	FilterEmptyBackup bool `json:"filter_empty_backup"`
+}
+
+func (c *Config) fileFormat(start time.Time) (filename string) {
+	if c.FileFormatter != nil {
+		filename = c.FileFormatter(start)
+		if c.Compress && filepath.Ext(filename) != ".gz" {
+			filename += ".gz"
+		}
+	} else {
+		// [path-to-log]/filename.log.2007010215041517
+		timeTag := start.Format(c.TimeTagFormat)
+		if c.Compress {
+			filename = path.Join(c.LogPath, c.FileName+".log.gz."+timeTag)
+		} else {
+			filename = path.Join(c.LogPath, c.FileName+".log."+timeTag)
+		}
+	}
+	return
 }
 
 // NewDefaultConfig return the default config
@@ -142,6 +168,13 @@ func WithLogPath(path string) Option {
 func WithFileName(name string) Option {
 	return func(p *Config) {
 		p.FileName = name
+	}
+}
+
+// WithFileFormatter set the log file formatter
+func WithFileFormatter(formatter LogFileFormatter) Option {
+	return func(p *Config) {
+		p.FileFormatter = formatter
 	}
 }
 
