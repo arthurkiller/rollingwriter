@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	// BufferSize defined the buffer size, by default 1M buffer will be allocate
-	BufferSize = 0x100000
+	// BufferSize defined the buffer size, by default 1 KB buffer will be allocated
+	BufferSize = 1024
 	// QueueSize defined the queue size for asynchronize write
 	QueueSize = 1024
 	// Precision defined the precision about the reopen operation condition
@@ -104,6 +104,11 @@ type Config struct {
 
 	// FilterEmptyBackup will not backup empty file if you set it true
 	FilterEmptyBackup bool `json:"filter_empty_backup"`
+
+	// AsyncWriterModeBufferSize only works when WriterMode is 3(async).
+	// For the thread-safe purpose, we need to make a copy of input bytes when AsynchronousWriter#Write calls.
+	// By default, the buffer size is 1 KB.
+	AsyncWriterModeBufferSize int `json:"async_writer_mode_buffer_size"`
 }
 
 func (c *Config) fileFormat(start time.Time) (filename string) {

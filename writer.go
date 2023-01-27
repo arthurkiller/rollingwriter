@@ -37,11 +37,12 @@ type LockedWriter struct {
 // AsynchronousWriter provide a asynchronous writer with the writer to confirm the write
 type AsynchronousWriter struct {
 	Writer
-	ctx     chan int
-	queue   chan []byte
-	errChan chan error
-	closed  int32
-	wg      sync.WaitGroup
+	ctx             chan int
+	queue           chan []byte
+	errChan         chan error
+	closed          int32
+	wg              sync.WaitGroup
+	asyncBufferPool sync.Pool
 }
 
 // BufferWriter merge some write operations into one.
@@ -51,13 +52,6 @@ type BufferWriter struct {
 	swaping int32
 
 	lockBuf Locker // protect the buffer by spinlock
-}
-
-// buffer pool for asynchronous writer
-var _asyncBufferPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, BufferSize)
-	},
 }
 
 // NewWriterFromConfig generate the rollingWriter with given config
@@ -146,6 +140,9 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			Writer: writer,
 		}
 	case "async":
+		if c.AsyncWriterModeBufferSize > 0 {
+			BufferSize = c.AsyncWriterModeBufferSize
+		}
 		wr := &AsynchronousWriter{
 			ctx:     make(chan int),
 			queue:   make(chan []byte, QueueSize),
@@ -153,6 +150,12 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			wg:      sync.WaitGroup{},
 			closed:  0,
 			Writer:  writer,
+			// buffer pool for asynchronous writer
+			asyncBufferPool: sync.Pool{
+				New: func() interface{} {
+					return make([]byte, BufferSize)
+				},
+			},
 		}
 		// start the asynchronous writer
 		wr.wg.Add(1)
@@ -362,7 +365,7 @@ func (w *AsynchronousWriter) Write(b []byte) (int, error) {
 		}
 
 		select {
-		case w.queue <- append(_asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]:
+		case w.queue <- append(w.asyncBufferPool.Get().([]byte)[0:0], b...)[:len(b)]:
 			return len(b), nil
 		default:
 			return 0, ErrQueueFull
@@ -387,7 +390,7 @@ func (w *AsynchronousWriter) writer() {
 			if _, err = w.file.Write(b); err != nil && len(w.errChan) < cap(w.errChan) {
 				w.errChan <- err
 			}
-			_asyncBufferPool.Put(b)
+			w.asyncBufferPool.Put(b)
 		case <-w.ctx:
 			return
 		}
@@ -468,11 +471,11 @@ func (w *AsynchronousWriter) onClose() {
 				select {
 				case w.errChan <- err:
 				default:
-					_asyncBufferPool.Put(b)
+					w.asyncBufferPool.Put(b)
 					return
 				}
 			}
-			_asyncBufferPool.Put(b)
+			w.asyncBufferPool.Put(b)
 		default: // after the queue was empty, return
 			return
 		}
