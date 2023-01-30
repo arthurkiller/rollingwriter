@@ -108,6 +108,7 @@ type Config struct {
 	// AsyncWriterModeBufferSize only works when WriterMode is 3(async).
 	// For the thread-safe purpose, we need to make a copy of input bytes when AsynchronousWriter#Write calls.
 	// By default, the buffer size is 1 KB.
+	// Be careful, each time set a AsyncWriterModeBufferSize with WriterMode equals to 3, will override the pool#New method.
 	AsyncWriterModeBufferSize int `json:"async_writer_mode_buffer_size"`
 }
 
