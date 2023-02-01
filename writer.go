@@ -146,11 +146,6 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 			Writer: writer,
 		}
 	case "async":
-		if c.AsyncWriterModeBufferSize > 0 {
-			_asyncBufferPool.New = func() interface{} {
-				return make([]byte, c.AsyncWriterModeBufferSize)
-			}
-		}
 		wr := &AsynchronousWriter{
 			ctx:     make(chan int),
 			queue:   make(chan []byte, QueueSize),
