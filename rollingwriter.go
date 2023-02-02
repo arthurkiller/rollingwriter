@@ -17,8 +17,8 @@ const (
 )
 
 var (
-	// BufferSize defined the buffer size, by default 1M buffer will be allocate
-	BufferSize = 0x100000
+	// BufferSize defined the buffer size, by default 1 KB buffer will be allocated
+	BufferSize = 1024
 	// QueueSize defined the queue size for asynchronize write
 	QueueSize = 1024
 	// Precision defined the precision about the reopen operation condition
