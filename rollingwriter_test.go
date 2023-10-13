@@ -21,6 +21,7 @@ func TestOptions(t *testing.T) {
 		LogPath:                "./",
 		TimeTagFormat:          "200601021504",
 		FileName:               "foo",
+		FileExtension:          "log",
 		MaxRemain:              3,             // disable auto delete
 		RollingPolicy:          TimeRolling,   // TimeRotate by default
 		RollingTimePattern:     "0 0 0 * * *", // Rolling at 00:00 AM everyday

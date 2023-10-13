@@ -64,19 +64,21 @@ type Config struct {
 	//
 	// 1. the current log
 	//	log file path is located here:
-	//	[LogPath]/[FileName].log
+	//	[LogPath]/[FileName].[FileExtension]
 	//
 	// 2. the tuncated log file
 	//	the tuncated log file is backup here:
-	//	[LogPath]/[FileName].log.[TimeTag]
+	//	[LogPath]/[FileName].[FileExtension].[TimeTag]
 	//  if compressed true
-	//	[LogPath]/[FileName].log.gz.[TimeTag]
+	//	[LogPath]/[FileName].[FileExtension].gz.[TimeTag]
 	//
 	// NOTICE: blank field will be ignored
 	// By default we using '-' as separator, you can set it yourself
 	TimeTagFormat string `json:"time_tag_format"`
 	LogPath       string `json:"log_path"`
 	FileName      string `json:"file_name"`
+	// FileExtension defines the log file extension. By default, it's 'log'
+	FileExtension string `json:"file_extension"`
 	// FileFormatter log file path formatter for the file start write
 	// By default, append '.gz' suffix when Compress is true
 	FileFormatter LogFileFormatter `json:"-"`
@@ -113,12 +115,12 @@ func (c *Config) fileFormat(start time.Time) (filename string) {
 			filename += ".gz"
 		}
 	} else {
-		// [path-to-log]/filename.log.2007010215041517
+		// [path-to-log]/filename.[FileExtension].2007010215041517
 		timeTag := start.Format(c.TimeTagFormat)
 		if c.Compress {
-			filename = path.Join(c.LogPath, c.FileName+".log.gz."+timeTag)
+			filename = path.Join(c.LogPath, c.FileName+"."+c.FileExtension+".gz."+timeTag)
 		} else {
-			filename = path.Join(c.LogPath, c.FileName+".log."+timeTag)
+			filename = path.Join(c.LogPath, c.FileName+"."+c.FileExtension+"."+timeTag)
 		}
 	}
 	return
@@ -130,6 +132,7 @@ func NewDefaultConfig() Config {
 		LogPath:                "./log",
 		TimeTagFormat:          "200601021504",
 		FileName:               "log",
+		FileExtension:          "log",
 		MaxRemain:              -1,            // disable auto delete
 		RollingPolicy:          1,             // TimeRotate by default
 		RollingTimePattern:     "0 0 0 * * *", // Rolling at 00:00 AM everyday
@@ -142,7 +145,7 @@ func NewDefaultConfig() Config {
 
 // LogFilePath return the absolute path on log file
 func LogFilePath(c *Config) (filepath string) {
-	filepath = path.Join(c.LogPath, c.FileName) + ".log"
+	filepath = path.Join(c.LogPath, c.FileName) + "." + c.FileExtension
 	return
 }
 
@@ -168,6 +171,13 @@ func WithLogPath(path string) Option {
 func WithFileName(name string) Option {
 	return func(p *Config) {
 		p.FileName = name
+	}
+}
+
+// WithFileExtension set the log file extension
+func WithFileExtension(ext string) Option {
+	return func(p *Config) {
+		p.FileExtension = ext
 	}
 }
 

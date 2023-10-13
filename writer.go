@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -67,6 +66,10 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 		return nil, ErrInvalidArgument
 	}
 
+	if c.FileExtension == "" {
+		c.FileExtension = "log"
+	}
+
 	// make dir for path if not exist
 	if err := os.MkdirAll(c.LogPath, 0700); err != nil {
 		return nil, err
@@ -96,7 +99,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 
 	if c.MaxRemain > 0 {
 		writer.rollingfilech = make(chan string, c.MaxRemain)
-		dir, err := ioutil.ReadDir(c.LogPath)
+		dir, err := os.ReadDir(c.LogPath)
 		if err != nil {
 			mng.Close()
 			return nil, err
@@ -108,7 +111,7 @@ func NewWriterFromConfig(c *Config) (RollingWriter, error) {
 				continue
 			}
 
-			fileName := c.FileName + ".log."
+			fileName := c.FileName + "." + c.FileExtension + "."
 			if strings.Contains(fi.Name(), fileName) {
 				fileSuffix := path.Ext(fi.Name())
 				if len(fileSuffix) > 1 {
@@ -192,7 +195,7 @@ func NewWriterFromConfigFile(path string) (RollingWriter, error) {
 	defer file.Close()
 
 	cfg := NewDefaultConfig()
-	buf, err := ioutil.ReadAll(file)
+	buf, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}

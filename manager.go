@@ -128,6 +128,13 @@ func (m *manager) ParseVolume(c *Config) {
 
 // GenLogFileName generate the new log file name, filename should be absolute path
 func (m *manager) GenLogFileName(c *Config) (filename string) {
+	// if fileextention is not set, use the default value
+	// this line is added to provide backwards compatibility with the current code and unit tests
+	// in the next major release, this line should be removed.
+	if c.FileExtension == "" {
+		c.FileExtension = "log"
+	}
+
 	m.lock.Lock()
 	filename = c.fileFormat(m.startAt)
 	// reset the start time to now
